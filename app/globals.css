@@ -1,0 +1,492 @@
+@import "tailwindcss";
+@import "tldraw/tldraw.css";
+
+@theme {
+  /* Cursor-inspired warm dark palette (default) */
+  --color-app: #14120b;
+  --color-elevated: #1c1a13;
+  --color-overlay: #0f0e08;
+
+  --color-hairline: rgba(255, 255, 255, 0.08);
+  --color-hairline-hover: rgba(255, 255, 255, 0.14);
+  --color-surface-hover: rgba(255, 255, 255, 0.04);
+
+  --color-text-primary: #f5f3ec;
+  --color-text-secondary: #a8a299;
+  --color-text-tertiary: #6e6a62;
+
+  --color-accent: #e8e3d6;
+  --color-on-accent: #14120b;
+  --color-selection: rgba(245, 243, 236, 0.6);
+  --color-provenance: rgba(168, 162, 153, 0.4);
+  --color-error: #e07856;
+
+  --color-grid: rgba(255, 255, 255, 0.05);
+  --color-code-bg: rgba(255, 255, 255, 0.05);
+  --color-code-block-bg: rgba(255, 255, 255, 0.04);
+  --color-link-underline: rgba(232, 227, 214, 0.3);
+
+  --shadow-panel: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-floating: 0 8px 24px rgba(0, 0, 0, 0.45);
+
+  --radius-node: 10px;
+  --radius-panel: 12px;
+  --radius-button: 6px;
+
+  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono", monospace;
+
+  --ease-out-fast: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Cursor-inspired warm light palette */
+:root[data-theme="light"] {
+  --color-app: #f3f0e6;
+  --color-elevated: #ffffff;
+  --color-overlay: rgba(243, 240, 230, 0.96);
+
+  --color-hairline: rgba(31, 29, 26, 0.10);
+  --color-hairline-hover: rgba(31, 29, 26, 0.18);
+  --color-surface-hover: rgba(31, 29, 26, 0.05);
+
+  --color-text-primary: #1f1d1a;
+  --color-text-secondary: #5d5a52;
+  --color-text-tertiary: #918c82;
+
+  --color-accent: #1f1d1a;
+  --color-on-accent: #f5f1ea;
+  --color-selection: rgba(31, 29, 26, 0.6);
+  --color-provenance: rgba(93, 90, 82, 0.4);
+  --color-error: #c44a22;
+
+  --color-grid: rgba(31, 29, 26, 0.05);
+  --color-code-bg: rgba(31, 29, 26, 0.05);
+  --color-code-block-bg: rgba(31, 29, 26, 0.04);
+  --color-link-underline: rgba(31, 29, 26, 0.3);
+
+  --shadow-panel: none;
+  --shadow-floating: none;
+}
+
+html,
+body {
+  height: 100%;
+  background: var(--color-app);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior: none;
+}
+
+/* tldraw chrome overrides — warm dark to match the app shell */
+.tl-container {
+  --tl-color-background: var(--color-app);
+  --color-background: var(--color-app);
+  --color-low: var(--color-elevated);
+  --color-low-border: var(--color-hairline);
+  --color-panel: var(--color-elevated);
+  --color-panel-contrast: var(--color-elevated);
+  --color-text: var(--color-text-primary);
+  --color-text-1: var(--color-text-primary);
+  --color-text-3: var(--color-text-secondary);
+  --color-divider: var(--color-hairline);
+  --color-muted-1: var(--color-text-secondary);
+  --color-muted-2: var(--color-text-tertiary);
+  --color-grid: var(--color-grid);
+  --color-selected: var(--color-accent);
+  --color-selected-contrast: var(--color-on-accent);
+  --color-hover: var(--color-surface-hover);
+  background: var(--color-app);
+  color: var(--color-text-primary);
+}
+
+/* Focus mode in light theme: white "desk" backdrop, unified cream "paper"
+   for the header bar + editor surface. Dark mode keeps the default tokens
+   (subtle bg-elevated vs bg-app contrast). Specificity is high enough to
+   override the underlying Tailwind bg-* utilities. */
+:root[data-theme="light"] .canvas-ai-focus-root {
+  background-color: #ffffff !important;
+}
+:root[data-theme="light"] .canvas-ai-focus-paper {
+  background-color: var(--color-app) !important;
+}
+
+.canvas-ai-doc-preview {
+  font-family: var(--font-sans);
+}
+.canvas-ai-doc-preview h1,
+.canvas-ai-doc-preview h2,
+.canvas-ai-doc-preview h3 {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 0 6px;
+}
+.canvas-ai-doc-preview h1 {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+.canvas-ai-doc-preview h2 {
+  font-size: 13px;
+  margin-top: 10px;
+}
+.canvas-ai-doc-preview h3 {
+  font-size: 12px;
+  margin-top: 8px;
+}
+.canvas-ai-doc-preview p,
+.canvas-ai-doc-preview ul,
+.canvas-ai-doc-preview ol,
+.canvas-ai-doc-preview blockquote {
+  margin: 0 0 6px;
+}
+.canvas-ai-doc-preview ul,
+.canvas-ai-doc-preview ol {
+  padding-left: 18px;
+}
+.canvas-ai-doc-preview li {
+  margin-bottom: 2px;
+}
+.canvas-ai-doc-preview code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--color-code-bg);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.canvas-ai-doc-preview pre {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  background: var(--color-code-block-bg);
+  padding: 6px 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 4px 0 8px;
+}
+.canvas-ai-doc-preview a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-decoration-color: var(--color-link-underline);
+}
+.canvas-ai-doc-preview blockquote {
+  border-left: 1.5px solid var(--color-hairline);
+  padding-left: 10px;
+  color: var(--color-text-tertiary);
+}
+.canvas-ai-doc-preview strong {
+  color: var(--color-text-primary);
+}
+
+/* Tiptap / streaming-view prose surface. Matches the existing doc-preview
+   look but scaled up for full-page reading. Single rule set serves the live
+   editor (.ProseMirror under .canvas-ai-prose) and the streaming renderer. */
+.canvas-ai-prose {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--color-text-primary);
+  padding: 32px 0;
+}
+.canvas-ai-prose .ProseMirror {
+  outline: none;
+  min-height: 50vh;
+}
+.canvas-ai-prose h1,
+.canvas-ai-prose h2,
+.canvas-ai-prose h3,
+.canvas-ai-prose h4,
+.canvas-ai-prose h5,
+.canvas-ai-prose h6 {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+.canvas-ai-prose h1 { font-size: 28px; margin: 24px 0 12px; }
+.canvas-ai-prose h2 { font-size: 22px; margin: 24px 0 10px; }
+.canvas-ai-prose h3 { font-size: 18px; margin: 20px 0 8px; }
+.canvas-ai-prose h4 { font-size: 16px; margin: 16px 0 6px; }
+.canvas-ai-prose p,
+.canvas-ai-prose ul,
+.canvas-ai-prose ol,
+.canvas-ai-prose blockquote {
+  margin: 0 0 12px;
+}
+/* Tailwind v4 preflight resets `ol, ul, menu { list-style: none }` in @layer
+   base. Unlayered overrides beat layered ones, but some Tiptap installs nest
+   the list inside a div that triggers a second reset — !important is the
+   reliable hammer here. */
+.canvas-ai-prose ul,
+.canvas-ai-prose ol {
+  padding-left: 24px !important;
+  margin-left: 0 !important;
+}
+.canvas-ai-prose ul {
+  list-style: disc outside !important;
+}
+.canvas-ai-prose ul ul {
+  list-style: circle outside !important;
+}
+.canvas-ai-prose ul ul ul {
+  list-style: square outside !important;
+}
+.canvas-ai-prose ol {
+  list-style: decimal outside !important;
+}
+.canvas-ai-prose li {
+  display: list-item !important;
+}
+.canvas-ai-prose li::marker {
+  color: var(--color-text-secondary);
+}
+.canvas-ai-prose li > p {
+  margin: 0;
+}
+.canvas-ai-prose ul[data-type="taskList"] {
+  list-style: none !important;
+  padding-left: 4px !important;
+}
+.canvas-ai-prose ul[data-type="taskList"] li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.canvas-ai-prose ul[data-type="taskList"] li > label {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.canvas-ai-prose ul[data-type="taskList"] li > div {
+  flex: 1;
+  min-width: 0;
+}
+.canvas-ai-prose code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--color-code-bg);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.canvas-ai-prose pre {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--color-code-block-bg);
+  padding: 12px 14px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 0 0 14px;
+}
+.canvas-ai-prose pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+.canvas-ai-prose blockquote {
+  border-left: 2px solid var(--color-hairline);
+  padding-left: 14px;
+  color: var(--color-text-secondary);
+}
+.canvas-ai-prose a,
+.canvas-ai-prose .ProseMirror a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-decoration-color: var(--color-link-underline);
+  cursor: pointer !important;
+}
+.canvas-ai-prose a:hover {
+  text-decoration-color: var(--color-accent);
+}
+.canvas-ai-prose strong { color: var(--color-text-primary); font-weight: 600; }
+.canvas-ai-prose em { font-style: italic; }
+.canvas-ai-prose hr {
+  border: 0;
+  border-top: 1px solid var(--color-hairline);
+  margin: 24px 0;
+}
+.canvas-ai-prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  margin: 8px 0;
+}
+.canvas-ai-prose table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0 0 14px;
+  font-size: 14px;
+}
+.canvas-ai-prose th,
+.canvas-ai-prose td {
+  border: 1px solid var(--color-hairline);
+  padding: 6px 10px;
+  text-align: left;
+}
+.canvas-ai-prose th {
+  background: var(--color-surface-hover);
+  font-weight: 600;
+}
+
+/* Tiptap placeholder for empty editor. */
+.canvas-ai-prose .is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-text-tertiary);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Tiptap selection highlight — match the dark/light app token. */
+.canvas-ai-prose ::selection {
+  background-color: rgba(245, 243, 236, 0.18);
+}
+:root[data-theme="light"] .canvas-ai-prose ::selection {
+  background-color: rgba(20, 18, 11, 0.16);
+}
+
+/* Inline comments: soft yellow highlight on commented text, matching the
+   Notion / Google Docs convention. The right-margin badge surfaces presence;
+   the inline highlight surfaces location. */
+.canvas-ai-prose .comment-highlight {
+  background-color: color-mix(in srgb, #f5c842 22%, transparent);
+  border-bottom: 1.5px solid color-mix(in srgb, #f5c842 70%, transparent);
+  cursor: pointer;
+  transition: background-color 0.1s;
+}
+.canvas-ai-prose .comment-highlight:hover {
+  background-color: color-mix(in srgb, #f5c842 35%, transparent);
+}
+
+/* Phase 3: diff decorations for AI-proposed edits. */
+.canvas-ai-prose .diff-del {
+  text-decoration: line-through;
+  text-decoration-color: var(--color-error);
+  background-color: color-mix(in srgb, var(--color-error) 18%, transparent);
+  color: var(--color-text-secondary);
+}
+.canvas-ai-prose .diff-ins {
+  background-color: color-mix(in srgb, #4ec07a 22%, transparent);
+  color: var(--color-text-primary);
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+/* Focus-mode print: hide everything except `.canvas-ai-print-target`.
+ * The print target is mounted hidden in the normal layout (off-screen) and
+ * becomes the only visible block while printing. Chrome's "Save as PDF"
+ * picks up document.title (set by toPdf.ts) for the filename suggestion. */
+.canvas-ai-print-target {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+@media print {
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  body * {
+    visibility: hidden !important;
+  }
+  .canvas-ai-print-target,
+  .canvas-ai-print-target * {
+    visibility: visible !important;
+  }
+  .canvas-ai-print-target {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: auto !important;
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    pointer-events: auto !important;
+    display: block !important;
+    background: #ffffff !important;
+    color: #111111 !important;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 32px 24px;
+    font-family: var(--font-sans);
+    font-size: 11pt;
+    line-height: 1.55;
+  }
+  .canvas-ai-print-target h1 {
+    font-size: 20pt;
+    font-weight: 600;
+    margin: 0 0 12pt;
+    line-height: 1.2;
+  }
+  .canvas-ai-print-target h2 {
+    font-size: 15pt;
+    font-weight: 600;
+    margin: 18pt 0 6pt;
+  }
+  .canvas-ai-print-target h3 {
+    font-size: 12pt;
+    font-weight: 600;
+    margin: 14pt 0 4pt;
+  }
+  .canvas-ai-print-target p,
+  .canvas-ai-print-target ul,
+  .canvas-ai-print-target ol,
+  .canvas-ai-print-target blockquote {
+    margin: 0 0 8pt;
+  }
+  .canvas-ai-print-target ul,
+  .canvas-ai-print-target ol {
+    padding-left: 18pt;
+  }
+  .canvas-ai-print-target li {
+    margin-bottom: 3pt;
+  }
+  .canvas-ai-print-target code {
+    font-family: var(--font-mono);
+    font-size: 10pt;
+    background: #f3f1ea;
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+  .canvas-ai-print-target pre {
+    font-family: var(--font-mono);
+    font-size: 9.5pt;
+    background: #f3f1ea;
+    padding: 8pt 10pt;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0 0 10pt;
+  }
+  .canvas-ai-print-target a {
+    color: #1144aa;
+    text-decoration: underline;
+  }
+  .canvas-ai-print-target blockquote {
+    border-left: 2pt solid #cccccc;
+    padding-left: 10pt;
+    color: #444444;
+  }
+  .canvas-ai-print-target table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0 0 10pt;
+    font-size: 10pt;
+  }
+  .canvas-ai-print-target th,
+  .canvas-ai-print-target td {
+    border: 0.5pt solid #cccccc;
+    padding: 4pt 6pt;
+    text-align: left;
+  }
+  @page {
+    margin: 0.6in;
+  }
+}

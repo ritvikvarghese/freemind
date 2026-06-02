@@ -40,6 +40,17 @@ declare module "@tldraw/tlschema" {
       ocrText: string;
       status: "idle" | "ocr" | "done" | "error";
     };
+    "canvas-ai-link": {
+      w: number;
+      h: number;
+      url: string;
+      title: string;
+      description: string;
+      image: string;
+      siteName: string;
+      text: string;
+      status: "loading" | "done" | "error";
+    };
     "canvas-ai-document": {
       w: number;
       h: number;
@@ -151,6 +162,23 @@ type _CheckImage = TLBaseShape<
   ? true
   : never;
 
+type _CheckLink = TLBaseShape<
+  "canvas-ai-link",
+  {
+    w: number;
+    h: number;
+    url: string;
+    title: string;
+    description: string;
+    image: string;
+    siteName: string;
+    text: string;
+    status: "loading" | "done" | "error";
+  }
+> extends TLBaseBoxShape & TLShape
+  ? true
+  : never;
+
 type _CheckDocument = TLBaseShape<
   "canvas-ai-document",
   {
@@ -185,4 +213,10 @@ type _CheckDocument = TLBaseShape<
   ? true
   : never;
 
-export type { _CheckText, _CheckUpload, _CheckImage, _CheckDocument };
+export type {
+  _CheckText,
+  _CheckUpload,
+  _CheckImage,
+  _CheckLink,
+  _CheckDocument,
+};

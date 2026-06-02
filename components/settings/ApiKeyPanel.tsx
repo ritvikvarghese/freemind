@@ -10,6 +10,10 @@ import {
   Trash2,
   Sun,
   Moon,
+  Download,
+  Upload,
+  ShieldCheck,
+  ShieldAlert,
 } from "lucide-react";
 import Anthropic, { AuthenticationError, APIError } from "@anthropic-ai/sdk";
 import { useEditor } from "tldraw";
@@ -17,6 +21,12 @@ import { clearApiKey, setApiKey, useApiKey } from "@/lib/storage/apiKey";
 import { clearCanvas } from "@/lib/canvas/clearCanvas";
 import { toast } from "@/components/canvas/toast";
 import { setTheme, useTheme, type Theme } from "@/lib/storage/theme";
+import { useOpenChatId } from "@/lib/chat/openChat";
+import { downloadBackup, importBackupFile } from "@/lib/storage/backup";
+import {
+  isStoragePersisted,
+  requestPersistentStorage,
+} from "@/lib/storage/persist";
 
 type ValidateResult =
   | { kind: "idle" }
@@ -28,12 +38,18 @@ export function ApiKeyPanel() {
   const editor = useEditor();
   const { key, source, hasKey } = useApiKey();
   const theme = useTheme();
+  const openChatId = useOpenChatId();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [reveal, setReveal] = useState(false);
   const [status, setStatus] = useState<ValidateResult>({ kind: "idle" });
   const [confirmingClear, setConfirmingClear] = useState(false);
+  const [persisted, setPersisted] = useState<boolean | null>(null);
+  const [backupBusy, setBackupBusy] = useState<"idle" | "export" | "import">(
+    "idle",
+  );
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
   // Close on outside click
   useEffect(() => {
@@ -44,6 +60,43 @@ export function ApiKeyPanel() {
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
+
+  // Refresh storage-persistence status whenever the panel opens.
+  useEffect(() => {
+    if (open) void isStoragePersisted().then(setPersisted);
+  }, [open]);
+
+  async function handleExport() {
+    setBackupBusy("export");
+    try {
+      await downloadBackup();
+      toast("Backup downloaded.");
+    } catch (err) {
+      toast(`Backup failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBackupBusy("idle");
+    }
+  }
+
+  async function handleImport(file: File) {
+    setBackupBusy("import");
+    try {
+      const r = await importBackupFile(file);
+      toast(
+        `Restored ${r.boardsAdded} board${r.boardsAdded === 1 ? "" : "s"}, ${r.databasesRestored} canvas${r.databasesRestored === 1 ? "" : "es"}, ${r.recordsMerged} records — reloading…`,
+      );
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (err) {
+      toast(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBackupBusy("idle");
+    }
+  }
+
+  async function handleProtectStorage() {
+    await requestPersistentStorage();
+    setPersisted(await isStoragePersisted());
+  }
 
   function openPanel() {
     setDraft("");
@@ -96,7 +149,14 @@ export function ApiKeyPanel() {
   }
 
   return (
-    <div ref={panelRef} className="pointer-events-auto fixed top-4 right-4 z-30">
+    <div
+      ref={panelRef}
+      className="pointer-events-auto fixed top-4 z-40"
+      style={{
+        right: openChatId ? 416 : 16,
+        transition: "right 140ms var(--ease-out-fast)",
+      }}
+    >
       <button
         type="button"
         title="Settings"
@@ -114,7 +174,7 @@ export function ApiKeyPanel() {
       </button>
 
       {open ? (
-        <div className="absolute right-0 mt-2 w-[340px] rounded-panel border border-hairline bg-elevated p-4 shadow-[var(--shadow-floating)]">
+        <div className="absolute right-0 mt-2 max-h-[calc(100vh-72px)] w-[340px] overflow-y-auto rounded-panel border border-hairline bg-elevated p-4 shadow-[var(--shadow-floating)]">
           <div className="text-[13px] font-medium tracking-tight text-text-primary">
             Anthropic API key
           </div>
@@ -217,6 +277,74 @@ export function ApiKeyPanel() {
                 current={theme}
                 icon={<Sun className="h-3 w-3" aria-hidden />}
                 label="Light"
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-hairline">
+            <div className="text-[13px] font-medium tracking-tight text-text-primary">
+              Backup &amp; restore
+            </div>
+            <div className="mt-1 text-[12px] text-text-tertiary">
+              Export a copy of your data to re-import if it&apos;s ever lost.
+              Import only adds what&apos;s missing.
+            </div>
+
+            {persisted !== null ? (
+              persisted ? (
+                <div className="mt-3 flex items-center gap-2 rounded-button border border-hairline px-2.5 py-1.5 text-[11px] text-text-secondary">
+                  <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+                  Storage is protected from automatic eviction.
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void handleProtectStorage()}
+                  className="mt-3 flex w-full items-center gap-2 rounded-button border border-hairline px-2.5 py-1.5 text-[11px] text-text-secondary hover:border-hairline-hover hover:text-text-primary transition-colors duration-100"
+                >
+                  <ShieldAlert className="h-3.5 w-3.5" aria-hidden />
+                  Storage not protected. Click to protect.
+                </button>
+              )
+            ) : null}
+
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleExport()}
+                disabled={backupBusy !== "idle"}
+                className="flex items-center gap-1.5 rounded-button px-3 py-1.5 text-[12px] text-text-secondary hover:text-text-primary border border-hairline hover:border-hairline-hover transition-colors duration-100 disabled:opacity-40"
+              >
+                {backupBusy === "export" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                ) : (
+                  <Download className="h-3.5 w-3.5" aria-hidden />
+                )}
+                Export backup
+              </button>
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={backupBusy !== "idle"}
+                className="flex items-center gap-1.5 rounded-button px-3 py-1.5 text-[12px] text-text-secondary hover:text-text-primary border border-hairline hover:border-hairline-hover transition-colors duration-100 disabled:opacity-40"
+              >
+                {backupBusy === "import" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                ) : (
+                  <Upload className="h-3.5 w-3.5" aria-hidden />
+                )}
+                Import
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.currentTarget.files?.[0];
+                  e.currentTarget.value = "";
+                  if (file) void handleImport(file);
+                }}
               />
             </div>
           </div>

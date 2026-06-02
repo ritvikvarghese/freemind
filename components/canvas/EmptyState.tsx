@@ -7,8 +7,11 @@ const OUR_TYPES = new Set([
   "canvas-ai-upload",
   "canvas-ai-image",
   "canvas-ai-document",
+  "canvas-ai-link", // pasted-link card
   "text", // tldraw native text shape (T toolbar button)
+  "note", // tldraw native sticky note (toolbar button)
   "image", // tldraw native image shape (legacy / paste fallback)
+  "bookmark", // tldraw native bookmark shape (pasted link)
 ]);
 
 export function EmptyState() {

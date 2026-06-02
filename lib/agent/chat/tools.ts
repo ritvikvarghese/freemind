@@ -75,8 +75,6 @@ export const PROPOSE_REPLACE_SECTION_TOOL = {
 
 export const CHAT_TOOLS = [PROPOSE_EDIT_TOOL, PROPOSE_REPLACE_SECTION_TOOL];
 
-export type ToolName = (typeof CHAT_TOOLS)[number]["name"];
-
 /**
  * Best-effort parse of a streaming tool_use partial JSON buffer. Returns the
  * `rationale` field if present so the UI can render it optimistically before

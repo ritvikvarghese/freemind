@@ -4,6 +4,8 @@ const OUR_TYPES = new Set([
   "canvas-ai-text",
   "canvas-ai-upload",
   "canvas-ai-document",
+  "canvas-ai-link", // pasted-link cards
+  "bookmark", // pasted-link bookmarks (now usable as sources)
 ]);
 
 /**

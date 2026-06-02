@@ -1,9 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useEditor, type TLShapeId } from "tldraw";
-import { X, FileText, FileType, MonitorPlay, ExternalLink } from "lucide-react";
+import {
+  X,
+  FileText,
+  FileType,
+  MonitorPlay,
+  ExternalLink,
+  ScanText,
+  Maximize2,
+  Minimize2,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { markdownUrlTransform } from "@/lib/markdown/urlTransform";
@@ -15,14 +24,19 @@ type Props = {
 };
 
 /**
- * Read-only full-text view of an upload (PDF or markdown). Lets the user
- * actually read the contents instead of squinting at the card preview. No
- * editing — what's stored as extracted text is what we render.
+ * Two-pane focus view of an upload (mirrors ImageFocusMode). Left: the file
+ * rendered as authored — the PDF itself (images + formatting) or rendered
+ * markdown. Right: the read-only extracted text the AI uses as context.
+ * Uploads stay read-only, so keeping `isReadonly: true` here is safe (unlike
+ * ImageFocusMode, which edits and must avoid it). YouTube uploads (legacy)
+ * have no "raw doc" — they show their transcript single-pane.
  */
 export function UploadFocusMode({ shapeId, onClose }: Props) {
   const editor = useEditor();
   const shape = editor.getShape(shapeId) as UploadNodeShape | undefined;
   const [mounted, setMounted] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
     editor.updateInstanceState({ isReadonly: true });
@@ -51,6 +65,29 @@ export function UploadFocusMode({ shapeId, onClose }: Props) {
   useEffect(() => {
     if (!shape) onClose();
   }, [shape, onClose]);
+
+  // Render PDFs from a Blob URL set imperatively on the iframe, not a `data:`
+  // URL. Chromium's PDF viewer silently refuses large `data:` URIs (a 100+
+  // page book is several MB), leaving the iframe blank; Blob URLs have no such
+  // limit. Setting src via ref (not state) keeps this off the set-state-in-
+  // effect path and re-runs cleanly under StrictMode.
+  useEffect(() => {
+    const s = editor.getShape(shapeId) as UploadNodeShape | undefined;
+    const data = s?.props.kind === "pdf" ? s.props.pdfData : "";
+    const el = iframeRef.current;
+    if (!data || !el) return;
+    let url: string;
+    try {
+      const bin = atob(data);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+    } catch {
+      return;
+    }
+    el.src = url;
+    return () => URL.revokeObjectURL(url);
+  }, [editor, shapeId]);
 
   const markdownComponents = useMemo(
     () => ({
@@ -94,8 +131,8 @@ export function UploadFocusMode({ shapeId, onClose }: Props) {
           "opacity 200ms var(--ease-out-fast), transform 200ms var(--ease-out-fast)",
       }}
     >
-      <div className="canvas-ai-focus-paper border-b border-hairline bg-elevated">
-        <div className="mx-auto flex w-full max-w-[760px] items-center gap-3 px-6 py-3">
+      <div className="border-b border-hairline bg-elevated">
+        <div className="mx-auto flex w-full max-w-[1100px] items-center gap-3 px-6 py-3">
           <Icon
             className="h-4 w-4 shrink-0 text-text-secondary"
             aria-hidden
@@ -129,34 +166,83 @@ export function UploadFocusMode({ shapeId, onClose }: Props) {
         </div>
       </div>
 
-      {shape.props.pdfData ? (
-        // Scanned PDF: no transcript to show, so render the PDF itself so the
-        // user can read it. The AI reads these bytes directly as a vision
-        // source at research/chat time.
-        <div className="flex-1 overflow-hidden bg-app">
-          <iframe
-            src={`data:application/pdf;base64,${shape.props.pdfData}`}
-            title={shape.props.filename}
-            className="h-full w-full border-0"
-          />
+      {shape.props.kind === "youtube" ? (
+        // Legacy YouTube upload: no source document, just the transcript.
+        <div className="flex-1 overflow-auto bg-app">
+          <div className="mx-auto w-full max-w-[760px] px-6 py-8">
+            <pre className="whitespace-pre-wrap break-words font-sans text-[14px] leading-relaxed text-text-primary">
+              {shape.props.fullText || "No transcript."}
+            </pre>
+          </div>
         </div>
       ) : (
-        <div className="canvas-ai-focus-paper flex-1 overflow-auto bg-app">
-          <div className="mx-auto w-full max-w-[760px] px-6 py-8">
-            {shape.props.kind === "markdown" ? (
-              <div className="canvas-ai-doc-preview text-[14px] leading-relaxed text-text-primary">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={markdownComponents}
-                  urlTransform={markdownUrlTransform}
+        <div className="flex-1 overflow-hidden bg-app">
+          <div
+            className={`mx-auto grid h-full w-full gap-6 px-6 py-8 ${
+              expanded
+                ? "max-w-[1600px] grid-cols-1"
+                : "max-w-[1100px] grid-cols-2"
+            }`}
+          >
+            {/* Left: the document as authored */}
+            <div className="flex flex-col overflow-hidden">
+              <div className="mb-2 flex items-center gap-2 text-[11px] text-text-tertiary">
+                <FileText className="h-3 w-3" aria-hidden />
+                Document
+                <button
+                  type="button"
+                  onClick={() => setExpanded((v) => !v)}
+                  title={expanded ? "Exit full screen" : "Full screen"}
+                  aria-label={expanded ? "Exit full screen" : "Full screen"}
+                  className="ml-auto grid h-6 w-6 place-items-center rounded-button text-text-tertiary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
                 >
-                  {shape.props.fullText}
-                </ReactMarkdown>
+                  {expanded ? (
+                    <Minimize2 className="h-3.5 w-3.5" aria-hidden />
+                  ) : (
+                    <Maximize2 className="h-3.5 w-3.5" aria-hidden />
+                  )}
+                </button>
               </div>
-            ) : (
-              <pre className="whitespace-pre-wrap break-words font-sans text-[14px] leading-relaxed text-text-primary">
-                {shape.props.fullText || "No extracted text."}
-              </pre>
+              <div className="flex-1 overflow-auto rounded-node border border-hairline bg-elevated">
+                {shape.props.kind === "pdf" ? (
+                  shape.props.pdfData ? (
+                    <iframe
+                      ref={iframeRef}
+                      title={shape.props.filename}
+                      className="h-full w-full border-0"
+                    />
+                  ) : (
+                    <div className="px-5 py-4 text-[12px] leading-relaxed text-text-tertiary">
+                      The raw PDF wasn&apos;t stored for this upload. Re-upload
+                      it to view the original with images and formatting. The
+                      extracted text is on the right.
+                    </div>
+                  )
+                ) : (
+                  <div className="canvas-ai-doc-preview px-5 py-4 text-[14px] leading-relaxed text-text-primary">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={markdownComponents}
+                      urlTransform={markdownUrlTransform}
+                    >
+                      {shape.props.fullText}
+                    </ReactMarkdown>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right: read-only extracted text (what the AI reads) */}
+            {!expanded && (
+              <div className="flex flex-col overflow-hidden">
+                <div className="mb-2 flex items-center gap-2 text-[11px] text-text-tertiary">
+                  <ScanText className="h-3 w-3" aria-hidden />
+                  Extracted text
+                </div>
+                <div className="flex-1 overflow-auto whitespace-pre-wrap break-words rounded-node border border-hairline bg-elevated p-4 text-[13.5px] leading-relaxed text-text-secondary">
+                  {shape.props.fullText || "No extracted text."}
+                </div>
+              </div>
             )}
           </div>
         </div>

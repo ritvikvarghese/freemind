@@ -17,8 +17,6 @@ export type ProposeReplaceSectionInput = {
   rationale: string;
 };
 
-export type ProposalKind = "propose_edit" | "propose_replace_section";
-
 export type Proposal =
   | ({
       id: ProposalId;
@@ -45,6 +43,14 @@ export type ChatMessage = {
   role: ChatRole;
   text: string;
   proposals?: Proposal[];
+  /** Deepsearch provenance (canvas chat only). Optional + additive — IDB stores
+   *  plain JSON, so no migration; artifact chats simply never set it. */
+  webSearches?: { query: string; urls: string[] }[];
+  /** Source ids (into the canvas chat's `session.sources`) attached to THIS
+   *  message — the originals on the first turn, or docs added before sending it.
+   *  Drives the inline attachment cards and that turn's <focus>. Canvas chat
+   *  only; optional + additive (no migration; artifact chats never set it). */
+  attachmentIds?: string[];
   createdAt: number;
   error?: string;
 };

@@ -69,6 +69,9 @@ export type DocumentNodeShape = TLBaseShape<
     comments: Comment[];
     sourcesUsed: { query: string; urls: string[] }[];
     errorMessage: string;
+    /** External "watch/source" link (e.g. the YouTube video this transcript
+     * came from). Empty for hand-made or research documents. */
+    sourceUrl: string;
   }
 >;
 
@@ -147,6 +150,7 @@ export class DocumentNodeUtil extends BaseBoxShapeUtil<DocumentNodeShape> {
       }),
     ),
     errorMessage: T.string,
+    sourceUrl: T.string,
   };
 
   static override migrations = createShapePropsMigrationSequence({
@@ -164,6 +168,14 @@ export class DocumentNodeUtil extends BaseBoxShapeUtil<DocumentNodeShape> {
         up: (props) => {
           const p = props as { comments?: Comment[] };
           if (!Array.isArray(p.comments)) p.comments = [];
+        },
+        down: "retired",
+      },
+      {
+        id: "com.tldraw.shape.canvas-ai-document/3",
+        up: (props) => {
+          const p = props as { sourceUrl?: string };
+          if (typeof p.sourceUrl !== "string") p.sourceUrl = "";
         },
         down: "retired",
       },
@@ -196,6 +208,7 @@ export class DocumentNodeUtil extends BaseBoxShapeUtil<DocumentNodeShape> {
       comments: [],
       sourcesUsed: [],
       errorMessage: "",
+      sourceUrl: "",
     };
   }
 

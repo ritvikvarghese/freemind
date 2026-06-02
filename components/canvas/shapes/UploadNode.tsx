@@ -18,6 +18,7 @@ import {
   MonitorPlay,
 } from "lucide-react";
 import { openFocus } from "@/lib/focus/openFocus";
+import { isVisionPdf } from "@/lib/extract/pdf";
 import { ConnectHandle } from "./ConnectHandle";
 
 export type UploadNodeShape = TLBaseShape<
@@ -188,7 +189,7 @@ function UploadNodeBody({ shape }: { shape: UploadNodeShape }) {
         </div>
       </div>
 
-      {shape.props.pdfData ? (
+      {isVisionPdf(shape.props) ? (
         <div className="mx-4 mt-3 flex items-start gap-2 rounded-button border border-hairline px-2.5 py-1.5 text-[11px] text-text-secondary">
           <ScanText
             className="mt-0.5 h-3 w-3 shrink-0 text-text-tertiary"

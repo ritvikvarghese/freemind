@@ -1,8 +1,17 @@
 "use client";
 
-import { useEditor, createShapeId, type Editor } from "tldraw";
+import {
+  useEditor,
+  useValue,
+  createShapeId,
+  getColorStyleItems,
+  DefaultColorStyle,
+  type Editor,
+  type TLDefaultColorStyle,
+} from "tldraw";
 import {
   Type,
+  StickyNote,
   FileText,
   Upload,
   Image as ImageIcon,
@@ -26,6 +35,7 @@ export function MinimalToolbar() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const [ytOpen, setYtOpen] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
 
   return (
     <div className="pointer-events-auto fixed left-4 top-1/2 -translate-y-1/2 z-30 flex flex-col gap-1 rounded-panel bg-elevated border border-hairline p-1 shadow-[var(--shadow-panel)]">
@@ -35,6 +45,21 @@ export function MinimalToolbar() {
       >
         <Type className="h-4 w-4" aria-hidden />
       </ToolbarButton>
+      <div className="relative">
+        <ToolbarButton
+          label="Add sticky note (pick a color, then click canvas)"
+          active={noteOpen}
+          onClick={() => {
+            setYtOpen(false);
+            setNoteOpen((v) => !v);
+          }}
+        >
+          <StickyNote className="h-4 w-4" aria-hidden />
+        </ToolbarButton>
+        {noteOpen ? (
+          <NoteColorPicker editor={editor} onClose={() => setNoteOpen(false)} />
+        ) : null}
+      </div>
       <ToolbarButton
         label="New document"
         onClick={() => addBlankDocAtViewportCenter(editor)}
@@ -56,7 +81,10 @@ export function MinimalToolbar() {
       <ToolbarButton
         label="Add YouTube transcript"
         active={ytOpen}
-        onClick={() => setYtOpen((v) => !v)}
+        onClick={() => {
+          setNoteOpen(false);
+          setYtOpen((v) => !v);
+        }}
       >
         <MonitorPlay className="h-4 w-4" aria-hidden />
       </ToolbarButton>
@@ -102,6 +130,67 @@ async function addImages(editor: Editor, files: File[]): Promise<void> {
       "error",
     );
   }
+}
+
+// Swatch flyout for the sticky-note tool. Picking a color arms tldraw's native
+// note tool with that color (setStyleForNextShapes) so the next placed note
+// uses it. Swatch fills + ordering come live from the editor theme (light/dark),
+// so they exactly match the note that gets dropped. White is excluded by
+// getColorStyleItems (tldraw treats it as an easter egg the panel ignores).
+function NoteColorPicker({
+  editor,
+  onClose,
+}: {
+  editor: Editor;
+  onClose: () => void;
+}) {
+  const swatches = useValue(
+    "note-color-swatches",
+    () => {
+      const colors = editor.getCurrentTheme().colors[editor.getColorMode()];
+      const fills = colors as unknown as Record<string, { noteFill: string }>;
+      return getColorStyleItems(colors).map((item) => ({
+        name: item.value,
+        fill: fills[item.value]?.noteFill,
+      }));
+    },
+    [editor],
+  );
+  const active = useValue(
+    "note-color-active",
+    () => editor.getStyleForNextShape(DefaultColorStyle),
+    [editor],
+  );
+
+  function pick(name: string) {
+    editor.setStyleForNextShapes(DefaultColorStyle, name as TLDefaultColorStyle);
+    editor.setCurrentTool("note");
+    onClose();
+  }
+
+  return (
+    <div
+      className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 z-30 grid grid-cols-3 gap-2.5 rounded-panel border border-hairline bg-elevated p-2.5 shadow-[var(--shadow-floating)]"
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      {swatches.map((s) => (
+        <button
+          key={s.name}
+          type="button"
+          title={s.name}
+          aria-label={`Sticky note: ${s.name}`}
+          onClick={() => pick(s.name)}
+          style={{ backgroundColor: s.fill }}
+          className={
+            "h-7 w-7 rounded-[6px] border transition-transform duration-100 hover:scale-110 " +
+            (active === s.name
+              ? "border-text-secondary/60 ring-1 ring-text-secondary/40 ring-offset-1 ring-offset-elevated"
+              : "border-hairline")
+          }
+        />
+      ))}
+    </div>
+  );
 }
 
 function ToolbarButton({

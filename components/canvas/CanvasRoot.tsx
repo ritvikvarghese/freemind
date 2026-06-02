@@ -12,6 +12,7 @@ import { setCurrentBoardPersistenceKey } from "@/lib/storage/currentBoard";
 import { TextNodeUtil } from "./shapes/TextNode";
 import { UploadNodeUtil } from "./shapes/UploadNode";
 import { ImageNodeUtil } from "./shapes/ImageNode";
+import { LinkNodeUtil } from "./shapes/LinkNode";
 import { DocumentNodeUtil } from "./shapes/DocumentNode";
 import { CanvasOverlay } from "./CanvasOverlay";
 import { WorldOverlay } from "./overlay/WorldOverlay";
@@ -21,12 +22,14 @@ import { BoardHeader } from "./BoardHeader";
 import { BoardProvider } from "./BoardContext";
 import { ingestFiles } from "./ingestFiles";
 import { ingestImages } from "./ingestImages";
+import { ingestLink } from "./ingestLink";
 import { useTheme } from "@/lib/storage/theme";
 
 const shapeUtils = [
   TextNodeUtil,
   UploadNodeUtil,
   ImageNodeUtil,
+  LinkNodeUtil,
   DocumentNodeUtil,
 ];
 
@@ -90,6 +93,33 @@ export function CanvasRoot({
     return () => setCurrentBoardPersistenceKey(null);
   }, [persistenceKey]);
   const onMount = useCallback((editor: Editor) => {
+    // TEMP DIAGNOSTIC — locating the stray text box on board open/reload.
+    const dump = (label: string) =>
+      console.log(
+        `[board ${label}] tool=${editor.getCurrentToolId()} shapes=`,
+        editor.getCurrentPageShapes().map((s) => {
+          const props = s.props as Record<string, unknown>;
+          return { type: s.type, id: s.id, x: Math.round(s.x), y: Math.round(s.y), text: props?.text };
+        }),
+      );
+    dump("at-mount");
+    const unsub = editor.store.listen(
+      (entry) => {
+        for (const raw of Object.values(entry.changes.added)) {
+          const rec = raw as unknown as Record<string, unknown>;
+          if (rec.typeName === "shape") {
+            const props = rec.props as Record<string, unknown> | undefined;
+            console.log("[board shape-added]", rec.type, rec.id, { x: rec.x, y: rec.y, text: props?.text });
+          }
+        }
+      },
+      { source: "all", scope: "document" },
+    );
+    setTimeout(() => {
+      dump("after-3s");
+      unsub();
+    }, 3000);
+
     const base = editor.getTheme("default");
     if (base) {
       editor.updateTheme({
@@ -131,6 +161,13 @@ export function CanvasRoot({
           DEFAULT_FILE_OPTS,
         );
       }
+    });
+
+    // Pasted/dropped URLs become our link card (scraped metadata + body text
+    // for AI context) instead of tldraw's default bookmark, which can't carry
+    // the page text.
+    editor.registerExternalContentHandler("url", async ({ url, point }) => {
+      await ingestLink(editor, url, point);
     });
   }, []);
 

@@ -43,3 +43,7 @@ next-env.d.ts
 
 # pdfjs worker (copied by postinstall)
 /public/pdf.worker.min.mjs
+
+# local data backups (personal content — never commit the JSON dumps)
+/backups/*
+!/backups/README.md

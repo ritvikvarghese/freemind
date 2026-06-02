@@ -10,6 +10,7 @@ const CONNECTABLE = new Set([
   "canvas-ai-image",
   "canvas-ai-document",
   "text",
+  "note",
 ]);
 
 /**

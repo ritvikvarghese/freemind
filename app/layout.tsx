@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { StorageGuard } from "@/components/StorageGuard";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -36,7 +37,10 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
       </head>
-      <body>{children}</body>
+      <body>
+        <StorageGuard />
+        {children}
+      </body>
     </html>
   );
 }

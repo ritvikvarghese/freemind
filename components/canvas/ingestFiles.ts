@@ -1,5 +1,10 @@
 import { createShapeId, type Editor, type VecLike } from "tldraw";
-import { extractPdf, describePdfError, type PdfExtractResult } from "@/lib/extract/pdf";
+import {
+  extractPdf,
+  describePdfError,
+  MAX_VISION_PDF_PAGES,
+  type PdfExtractResult,
+} from "@/lib/extract/pdf";
 import { extractMarkdown, MAX_MD_BYTES } from "@/lib/extract/markdown";
 import { toast } from "./toast";
 import type { UploadNodeShape } from "./shapes/UploadNode";
@@ -8,10 +13,6 @@ const PREVIEW_LEN = 400;
 const UPLOAD_W = 280;
 const UPLOAD_H = 200;
 const STAGGER = 24;
-
-// Anthropic's vision document block tops out at 100 pages per request. Scanned
-// PDFs beyond this still upload but will fail when used as an AI source.
-const MAX_VISION_PDF_PAGES = 100;
 
 export async function ingestFiles(
   editor: Editor,
@@ -50,23 +51,21 @@ export async function ingestFiles(
       continue;
     }
 
-    // Scanned PDF (no usable text layer): store the raw bytes so the AI can
-    // read it as a vision document. Verbatim OCR-to-text is blocked by
-    // Anthropic's copyright filter for published works, but reading/analysis
-    // is fine — so we hand Claude the PDF itself at research/chat time.
+    // Store the raw bytes for EVERY PDF so it can render as-authored (images +
+    // formatting) in focus mode. Bytes-present means "renderable" — NOT "send
+    // to the AI as vision." Only scanned PDFs (no usable text layer) ride along
+    // as vision documents; that path is gated by `isVisionPdf` at AI time.
+    // (Verbatim OCR-to-text is blocked by Anthropic's copyright filter for
+    // published works, but reading the PDF itself as vision is fine.)
     let pdfData = "";
-    if (
-      kind === "pdf" &&
-      (result as Extract<PdfExtractResult, { ok: true }>).lowText
-    ) {
+    if (kind === "pdf") {
       const pdfRes = result as Extract<PdfExtractResult, { ok: true }>;
-      if (pdfRes.pageCount > MAX_VISION_PDF_PAGES) {
+      pdfData = await fileToBase64(file);
+      if (pdfRes.lowText && pdfRes.pageCount > MAX_VISION_PDF_PAGES) {
         toast(
-          `"${file.name}" has ${pdfRes.pageCount} pages — too long for the AI to read as a scanned source (max ${MAX_VISION_PDF_PAGES}).`,
+          `"${file.name}" has ${pdfRes.pageCount} pages — too long for the AI to read as a scanned source (max ${MAX_VISION_PDF_PAGES}). It will still render and its text stays available.`,
           "error",
         );
-      } else {
-        pdfData = await fileToBase64(file);
       }
     }
 

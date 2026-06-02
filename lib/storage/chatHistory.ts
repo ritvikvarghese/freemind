@@ -62,15 +62,6 @@ export async function saveChatHistory(
   }
 }
 
-export async function deleteChatHistory(artifactId: TLShapeId): Promise<void> {
-  try {
-    const db = await getDb();
-    await db.delete(STORE, artifactId as unknown as string);
-  } catch (err) {
-    reportStorageError(err);
-  }
-}
-
 /**
  * Drop every chat-history record tied to a board's persistenceKey. Called from
  * `deleteBoard` so deleting a board doesn't leave orphan chat blobs in IDB.

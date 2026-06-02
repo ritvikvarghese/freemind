@@ -1,21 +1,16 @@
 "use client";
 
-import Anthropic, {
-  APIError,
-  APIUserAbortError,
-  AuthenticationError,
-} from "@anthropic-ai/sdk";
+import Anthropic, { APIUserAbortError } from "@anthropic-ai/sdk";
 import type {
   ContentBlock,
-  ContentBlockParam,
   MessageParam,
 } from "@anthropic-ai/sdk/resources/messages";
 import type { SourceSnapshot } from "@/components/canvas/shapes/DocumentNode";
 import type { ChatMessage } from "@/lib/storage/chatTypes";
 import { getApiKey } from "@/lib/storage/apiKey";
-import { imageBlock, pdfBlock } from "@/lib/agent/buildContext";
 import { buildChatSystemPrompt } from "./systemPrompt";
 import { CHAT_TOOLS } from "./tools";
+import { buildMediaPrefix, toApiMessages, describeError } from "./chatStream";
 
 const MODEL =
   (typeof process !== "undefined" && process.env.NEXT_PUBLIC_CLAUDE_CHAT_MODEL) ||
@@ -144,69 +139,4 @@ export function runChat(input: RunChatInput): AbortController {
   })();
 
   return controller;
-}
-
-// Build the cached media-prefix message pair for any image or scanned-PDF
-// sources on the doc (they can't live in the text-only system block). Returns
-// null when there are none.
-function buildMediaPrefix(sources: SourceSnapshot[]): MessageParam[] | null {
-  const images = sources.filter((s) => s.image);
-  const pdfs = sources.filter((s) => s.pdf);
-  if (images.length === 0 && pdfs.length === 0) return null;
-
-  const blocks: ContentBlockParam[] = [];
-  images.forEach((s, i) => {
-    blocks.push({ type: "text", text: `Source image ${i + 1} ("${s.title}"):` });
-    blocks.push(imageBlock(s.image!));
-  });
-  pdfs.forEach((s, i) => {
-    blocks.push({ type: "text", text: `Scanned PDF source ${i + 1} ("${s.title}"):` });
-    blocks.push(pdfBlock(s.pdf!.data));
-  });
-  // Cache breakpoint on the final block so the whole media prefix is reused.
-  const last = blocks[blocks.length - 1] as ContentBlockParam & {
-    cache_control?: { type: "ephemeral" };
-  };
-  last.cache_control = { type: "ephemeral" };
-
-  return [
-    { role: "user", content: blocks },
-    {
-      role: "assistant",
-      content: "Understood — I can see the source image(s) and document(s) above.",
-    },
-  ];
-}
-
-function toApiMessages(history: ChatMessage[]): MessageParam[] {
-  // Persist a flat text-only transcript on the wire. Proposals are rendered
-  // client-side and don't need to round-trip through the API as tool_use blocks
-  // because the next turn re-assembles the system prompt with the latest doc.
-  // This keeps the request shape simple and the cache prefix maximally stable.
-  const out: MessageParam[] = [];
-  for (const m of history) {
-    const text = m.text || (m.proposals?.length ? "(proposed edits)" : "");
-    if (!text) continue;
-    out.push({ role: m.role, content: text });
-  }
-  return out;
-}
-
-function describeError(err: unknown): string {
-  if (err instanceof AuthenticationError) {
-    return "Invalid API key. Update it in Settings.";
-  }
-  if (err instanceof APIError) {
-    if (err.status === 429) return "Rate limited — wait a moment and retry.";
-    if (err.status === 400) return `Bad request: ${err.message}`;
-    if (err.status === 529) return "Anthropic is overloaded — retry shortly.";
-    return `API error ${err.status ?? ""}: ${err.message}`;
-  }
-  if (err instanceof Error) {
-    if (err.message.toLowerCase().includes("failed to fetch")) {
-      return "Network blocked — cannot reach api.anthropic.com.";
-    }
-    return err.message;
-  }
-  return String(err);
 }

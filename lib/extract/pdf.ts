@@ -4,6 +4,24 @@ export const MAX_PDF_BYTES = 20 * 1024 * 1024; // 20 MB
 export const MAX_PDF_PAGES = 200;
 export const LOW_TEXT_THRESHOLD = 200; // chars
 
+// Anthropic's vision document block tops out at 100 pages per request.
+export const MAX_VISION_PDF_PAGES = 100;
+
+/**
+ * Whether a stored PDF should ride along to the AI as a *vision* document
+ * (scanned, no usable text layer, within the page cap). NOTE: every PDF now
+ * stores its raw bytes (`pdfData`) so it can render in focus mode — bytes
+ * present does NOT mean "send as vision." Use this predicate for the AI path;
+ * use `pdfData` presence only for rendering.
+ */
+export function isVisionPdf(p: {
+  lowText: boolean;
+  pageCount: number;
+  pdfData: string;
+}): boolean {
+  return p.lowText && p.pdfData.length > 0 && p.pageCount <= MAX_VISION_PDF_PAGES;
+}
+
 export type PdfExtractError =
   | { kind: "too-large"; bytes: number }
   | { kind: "too-many-pages"; pages: number }
@@ -21,9 +39,55 @@ export type PdfExtractResult =
 
 let pdfjsPromise: Promise<typeof import("pdfjs-dist")> | null = null;
 
+// WebKit/Safari (through at least 26.x) still does not implement async
+// iteration over a ReadableStream — `ReadableStream.prototype[Symbol.asyncIterator]`
+// is undefined. pdf.js v5's getTextContent() does `for await (const v of
+// readableStream)`, so reading any PDF throws
+// `undefined is not a function (near '...value of readableStream...')` on Safari
+// while working in Chromium (Dia, which implements it). Install the standard
+// getReader-based async iterator. No-op on engines that already provide it.
+function ensureReadableStreamAsyncIterator() {
+  if (typeof ReadableStream === "undefined") return;
+  const proto = ReadableStream.prototype as ReadableStream &
+    Record<symbol, unknown>;
+  if (proto[Symbol.asyncIterator]) return;
+
+  function values(this: ReadableStream<unknown>) {
+    const reader = this.getReader();
+    return {
+      next() {
+        return reader.read().then((result) => {
+          if (result.done) reader.releaseLock();
+          return result;
+        });
+      },
+      return(value?: unknown) {
+        const cancelPromise = reader.cancel();
+        reader.releaseLock();
+        return cancelPromise.then(() => ({ done: true as const, value }));
+      },
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
+  }
+
+  Object.defineProperty(proto, "values", {
+    value: values,
+    writable: true,
+    configurable: true,
+  });
+  Object.defineProperty(proto, Symbol.asyncIterator, {
+    value: values,
+    writable: true,
+    configurable: true,
+  });
+}
+
 function loadPdfjs() {
   pdfjsPromise ??= (async () => {
-    const pdfjs = await import("pdfjs-dist");
+    ensureReadableStreamAsyncIterator();
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
     return pdfjs;
   })();

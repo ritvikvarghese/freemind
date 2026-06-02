@@ -45,10 +45,6 @@ export function getActiveShapeId(): string | null {
   return active?.shapeId ?? null;
 }
 
-export function isRunActive(): boolean {
-  return active !== null;
-}
-
 function subscribe(cb: () => void): () => void {
   listeners.add(cb);
   return () => listeners.delete(cb);

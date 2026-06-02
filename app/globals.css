@@ -490,3 +490,12 @@ body {
     margin: 0.6in;
   }
 }
+
+/* Chat transcript must be text-selectable (native drag + Cmd/Ctrl+C) even though
+   the dock lives inside tldraw's user-select:none container. Per gotcha #23,
+   !important is the reliable override under Turbopack's layer ordering. */
+.canvas-ai-chat-selectable,
+.canvas-ai-chat-selectable * {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}

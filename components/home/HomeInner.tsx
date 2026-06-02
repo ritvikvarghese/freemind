@@ -3,11 +3,13 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Pencil, Trash2, GripVertical } from "lucide-react";
 import {
   createBoard,
   deleteBoard,
   renameBoard,
+  reorderBoards,
   useBoards,
   type Board,
 } from "@/lib/storage/boards";
@@ -18,12 +20,29 @@ import {
 export function HomeInner() {
   const boards = useBoards();
   const [title, setTitle] = useState("");
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Board | null>(null);
   const router = useRouter();
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const board = createBoard(title);
     router.push(`/b/${board.id}`);
+  }
+
+  function handleDrop(targetId: string) {
+    const sourceId = draggingId;
+    setDraggingId(null);
+    setOverId(null);
+    if (!sourceId || sourceId === targetId) return;
+    const ids = boards.map((b) => b.id);
+    const from = ids.indexOf(sourceId);
+    const to = ids.indexOf(targetId);
+    if (from === -1 || to === -1) return;
+    ids.splice(from, 1);
+    ids.splice(to, 0, sourceId);
+    reorderBoards(ids);
   }
 
   return (
@@ -58,15 +77,124 @@ export function HomeInner() {
       ) : (
         <ul className="space-y-0.5">
           {boards.map((b) => (
-            <BoardRow key={b.id} board={b} />
+            <BoardRow
+              key={b.id}
+              board={b}
+              isDragging={draggingId === b.id}
+              isDragOver={overId === b.id && draggingId !== b.id}
+              onDragStart={() => setDraggingId(b.id)}
+              onDragEnter={() => setOverId(b.id)}
+              onDragEnd={() => {
+                setDraggingId(null);
+                setOverId(null);
+              }}
+              onDrop={() => handleDrop(b.id)}
+              onRequestDelete={() => setPendingDelete(b)}
+            />
           ))}
         </ul>
       )}
+
+      {pendingDelete ? (
+        <ConfirmDeleteDialog
+          board={pendingDelete}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => {
+            deleteBoard(pendingDelete.id);
+            setPendingDelete(null);
+          }}
+        />
+      ) : null}
     </main>
   );
 }
 
-function BoardRow({ board }: { board: Board }) {
+function ConfirmDeleteDialog({
+  board,
+  onCancel,
+  onConfirm,
+}: {
+  board: Board;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const confirmRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    confirmRef.current?.focus();
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  const dialog = (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Confirm delete"
+      onClick={onCancel}
+      className="fixed inset-0 z-50 grid place-items-center bg-overlay px-6"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-panel border border-hairline bg-elevated p-5 shadow-[var(--shadow-panel)]"
+      >
+        <div className="text-[15px] font-medium tracking-tight text-text-primary">
+          Delete this canvas?
+        </div>
+        <p className="mt-2 text-[13px] leading-relaxed text-text-secondary">
+          You sure? &ldquo;{board.title}&rdquo; and everything on it will be
+          permanently removed. This can&apos;t be undone.
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="h-8 rounded-button px-3 text-[13px] text-text-secondary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
+          >
+            Cancel
+          </button>
+          <button
+            ref={confirmRef}
+            type="button"
+            onClick={onConfirm}
+            className="h-8 rounded-button bg-red-500/10 px-3 text-[13px] font-medium text-red-500 transition-colors duration-100 hover:bg-red-500/20"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (typeof document === "undefined" || !document.body) return dialog;
+  return createPortal(dialog, document.body);
+}
+
+function BoardRow({
+  board,
+  isDragging,
+  isDragOver,
+  onDragStart,
+  onDragEnter,
+  onDragEnd,
+  onDrop,
+  onRequestDelete,
+}: {
+  board: Board;
+  isDragging: boolean;
+  isDragOver: boolean;
+  onDragStart: () => void;
+  onDragEnter: () => void;
+  onDragEnd: () => void;
+  onDrop: () => void;
+  onRequestDelete: () => void;
+}) {
   const [editing, setEditing] = useState(false);
 
   if (editing) {
@@ -78,10 +206,40 @@ function BoardRow({ board }: { board: Board }) {
   }
 
   return (
-    <li className="group">
-      <div className="flex items-center gap-1 px-1 rounded-button hover:bg-surface-hover transition-colors duration-100">
+    <li
+      className="group"
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        onDragStart();
+      }}
+      onDragEnter={onDragEnter}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDrop();
+      }}
+      onDragEnd={onDragEnd}
+      style={{ opacity: isDragging ? 0.4 : 1 }}
+    >
+      <div
+        className={
+          "flex items-center gap-1 px-1 rounded-button transition-colors duration-100 " +
+          (isDragOver
+            ? "bg-surface-hover ring-1 ring-accent/60"
+            : "hover:bg-surface-hover")
+        }
+      >
+        <span
+          aria-hidden
+          title="Drag to reorder"
+          className="grid h-7 w-5 shrink-0 cursor-grab place-items-center text-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity duration-100 active:cursor-grabbing"
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </span>
         <Link
           href={`/b/${board.id}`}
+          draggable={false}
           className="flex-1 flex items-baseline gap-3 px-2 py-2 min-w-0"
         >
           <span className="flex-1 text-[14px] text-text-primary truncate">
@@ -104,15 +262,7 @@ function BoardRow({ board }: { board: Board }) {
           type="button"
           aria-label={`Delete ${board.title}`}
           title="Delete"
-          onClick={() => {
-            if (
-              window.confirm(
-                `Delete "${board.title}"? This will permanently remove the canvas and everything on it.`,
-              )
-            ) {
-              deleteBoard(board.id);
-            }
-          }}
+          onClick={onRequestDelete}
           className="h-7 w-7 grid place-items-center rounded-button text-text-tertiary hover:text-red-500 hover:bg-surface-hover opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-100"
         >
           <Trash2 className="h-3.5 w-3.5" aria-hidden />

@@ -1,8 +1,10 @@
-import type { TLShape, TLTextShape } from "tldraw";
+import type { TLShape, TLTextShape, TLNoteShape, TLBookmarkShape } from "tldraw";
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources/messages";
+import { isVisionPdf } from "@/lib/extract/pdf";
 import type { TextNodeShape } from "@/components/canvas/shapes/TextNode";
 import type { UploadNodeShape } from "@/components/canvas/shapes/UploadNode";
 import type { ImageNodeShape } from "@/components/canvas/shapes/ImageNode";
+import type { LinkNodeShape } from "@/components/canvas/shapes/LinkNode";
 import type {
   DocumentNodeShape,
   SourceSnapshot,
@@ -13,16 +15,44 @@ export type SourceShape =
   | TextNodeShape
   | UploadNodeShape
   | ImageNodeShape
+  | LinkNodeShape
   | DocumentNodeShape
-  | TLTextShape;
+  | TLTextShape
+  | TLNoteShape
+  | TLBookmarkShape;
 
 /** Raw text payload for a source shape — what the agent sees and what we snapshot. */
 export function sourceText(shape: SourceShape): string {
   if (shape.type === "canvas-ai-text") return shape.props.text;
   if (shape.type === "canvas-ai-document") return shape.props.markdown;
   if (shape.type === "canvas-ai-image") return shape.props.ocrText;
-  if (shape.type === "text") return richTextToPlain(shape.props.richText);
+  if (shape.type === "canvas-ai-link") return linkText(shape);
+  if (shape.type === "text" || shape.type === "note")
+    return richTextToPlain(shape.props.richText);
+  // Pasted-link bookmark: the URL is the context (research mode can web_search it).
+  if (shape.type === "bookmark") return shape.props.url;
   return shape.props.fullText;
+}
+
+/**
+ * Context text for a pasted link: the scraped page body, falling back to the
+ * metadata + URL when the fetch returned no body (non-HTML, blocked, or still
+ * loading). A short header keeps the model oriented on where the text is from.
+ */
+function linkText(shape: LinkNodeShape): string {
+  const { url, title, description, text } = shape.props;
+  const header = [title, url].filter(Boolean).join(" — ");
+  if (text.trim()) return `${header}\n\n${text}`;
+  return [header, description].filter(Boolean).join("\n");
+}
+
+/** Short, human label for a pasted-link bookmark — its hostname, else the URL. */
+function bookmarkTitle(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "") || url;
+  } catch {
+    return url;
+  }
 }
 
 /** Split a `data:<mime>;base64,<data>` URL into the bare base64 payload. */
@@ -112,13 +142,30 @@ export function buildContext(
         text: shape.props.ocrText,
       };
     }
-    if (shape.type === "text") {
+    if (shape.type === "text" || shape.type === "note") {
       const text = richTextToPlain(shape.props.richText).trim();
+      const fallback = shape.type === "note" ? "sticky note" : "text note";
       return {
         id,
         sourceId,
-        title: text ? truncate(text, 60) : "text note",
+        title: text ? truncate(text, 60) : fallback,
         text,
+      };
+    }
+    if (shape.type === "canvas-ai-link") {
+      return {
+        id,
+        sourceId,
+        title: shape.props.title || shape.props.siteName || "link",
+        text: linkText(shape),
+      };
+    }
+    if (shape.type === "bookmark") {
+      return {
+        id,
+        sourceId,
+        title: bookmarkTitle(shape.props.url),
+        text: shape.props.url,
       };
     }
     // upload
@@ -159,8 +206,10 @@ export function buildContext(
   });
 
   // Scanned PDFs ride along as vision document blocks (no usable text layer).
+  // Every PDF now stores bytes for rendering, so gate on isVisionPdf — NOT on
+  // pdfData presence — or text PDFs would bill as vision on top of their text.
   selected.forEach((shape, i) => {
-    if (shape.type !== "canvas-ai-upload" || !shape.props.pdfData) return;
+    if (shape.type !== "canvas-ai-upload" || !isVisionPdf(shape.props)) return;
     content.push({
       type: "text",
       text: `Scanned PDF source ${sources[i].id} ("${sources[i].title}"):`,
@@ -178,7 +227,10 @@ export function isSourceShape(shape: TLShape): shape is SourceShape {
     shape.type === "canvas-ai-text" ||
     shape.type === "canvas-ai-upload" ||
     shape.type === "canvas-ai-image" ||
-    shape.type === "text"
+    shape.type === "canvas-ai-link" ||
+    shape.type === "text" ||
+    shape.type === "note" ||
+    shape.type === "bookmark"
   ) {
     return true;
   }
@@ -243,13 +295,36 @@ export function snapshotSource(
         : undefined,
     };
   }
-  if (shape.type === "text") {
+  if (shape.type === "text" || shape.type === "note") {
     const text = richTextToPlain(shape.props.richText).trim();
+    const fallback = shape.type === "note" ? "Sticky note" : "Text note";
     return {
       id: shape.id,
       kind: "text",
-      title: text ? truncate(text, 80) : "Text note",
+      title: text ? truncate(text, 80) : fallback,
       text,
+      capturedAt,
+    };
+  }
+  if (shape.type === "canvas-ai-link") {
+    // Snapshot as plain text carrying the scraped page body (+ a header). No new
+    // SourceSnapshot kind needed, so no DocumentNode migration.
+    return {
+      id: shape.id,
+      kind: "text",
+      title: shape.props.title || shape.props.siteName || "Link",
+      text: linkText(shape),
+      capturedAt,
+    };
+  }
+  if (shape.type === "bookmark") {
+    // Snapshot as a plain-text source carrying the URL (no new snapshot kind
+    // needed). The chat sees the link; research mode can web_search it.
+    return {
+      id: shape.id,
+      kind: "text",
+      title: bookmarkTitle(shape.props.url),
+      text: shape.props.url,
       capturedAt,
     };
   }
@@ -266,6 +341,8 @@ export function snapshotSource(
     text: shape.props.fullText,
     capturedAt,
     // Scanned PDF: carry the bytes so the chat can re-send it for vision.
-    pdf: shape.props.pdfData ? { data: shape.props.pdfData } : undefined,
+    // Only scanned (vision-eligible) PDFs — every PDF stores bytes now, but a
+    // text PDF must not be re-sent as vision.
+    pdf: isVisionPdf(shape.props) ? { data: shape.props.pdfData } : undefined,
   };
 }

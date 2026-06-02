@@ -5,6 +5,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { markdownUrlTransform } from "@/lib/markdown/urlTransform";
 import type { ChatMessage, Proposal } from "@/lib/storage/chatTypes";
+import type { SourceSnapshot } from "@/components/canvas/shapes/DocumentNode";
+import { SourceCard } from "@/components/canvas/chat/SourceCard";
 import { ProposalCard } from "./ProposalCard";
 import { ToolUseStreamingCard } from "./ToolUseStreamingCard";
 
@@ -22,6 +24,9 @@ type Props = {
   liveStatus: Map<string, Proposal["status"]>;
   onAccept: (proposal: Proposal) => void;
   onReject: (proposal: Proposal) => void;
+  /** Canvas chat only: resolve a message's attachmentIds to source snapshots so
+   *  their cards render inline above the bubble. Omitted by the artifact chat. */
+  resolveAttachments?: (message: ChatMessage) => SourceSnapshot[];
 };
 
 export function ChatThread({
@@ -31,6 +36,7 @@ export function ChatThread({
   liveStatus,
   onAccept,
   onReject,
+  resolveAttachments,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottom = useRef(true);
@@ -59,7 +65,10 @@ export function ChatThread({
     streamingToolUses.length === 0;
 
   return (
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto px-3 py-4">
+    <div
+      ref={scrollRef}
+      className="canvas-ai-chat-selectable min-h-0 flex-1 overflow-auto px-3 py-4"
+    >
       {isEmpty ? (
         <div className="mx-auto mt-12 max-w-[280px] text-center text-[12px] text-text-tertiary">
           Ask a question about the document, or request an edit. Edits are
@@ -74,6 +83,7 @@ export function ChatThread({
             liveStatus={liveStatus}
             onAccept={onAccept}
             onReject={onReject}
+            attachments={resolveAttachments?.(m) ?? []}
           />
         ))}
         {streamingAssistantText.length > 0 ||
@@ -108,16 +118,27 @@ function MessageBlock({
   liveStatus,
   onAccept,
   onReject,
+  attachments,
 }: {
   message: ChatMessage;
   liveStatus: Map<string, Proposal["status"]>;
   onAccept: (p: Proposal) => void;
   onReject: (p: Proposal) => void;
+  attachments: SourceSnapshot[];
 }) {
   if (message.role === "user") {
     return (
-      <div className="ml-6 rounded-button bg-surface-hover px-3 py-2 text-[13px] text-text-primary whitespace-pre-wrap">
-        {message.text}
+      <div className="ml-6 space-y-1.5">
+        {attachments.length > 0 ? (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {attachments.map((s) => (
+              <SourceCard key={s.id} source={s} />
+            ))}
+          </div>
+        ) : null}
+        <div className="rounded-button bg-surface-hover px-3 py-2 text-[13px] text-text-primary whitespace-pre-wrap">
+          {message.text}
+        </div>
       </div>
     );
   }

@@ -1,10 +1,10 @@
 import { createShapeId, type Editor, type VecLike } from "tldraw";
 import { toast } from "./toast";
-import type { UploadNodeShape } from "./shapes/UploadNode";
-
-const PREVIEW_LEN = 400;
-const UPLOAD_W = 280;
-const UPLOAD_H = 200;
+import {
+  DOCUMENT_NODE_DEFAULT_W,
+  DOCUMENT_NODE_DEFAULT_H,
+  type DocumentNodeShape,
+} from "./shapes/DocumentNode";
 
 type TranscriptResponse =
   | { ok: true; videoId: string; title: string; url: string; transcript: string }
@@ -12,8 +12,11 @@ type TranscriptResponse =
 
 /**
  * Fetch a YouTube transcript via our same-origin route and drop it on the
- * canvas as a youtube-kind UploadNode (a normal AI source). Returns true on
- * success so the caller can clear its input.
+ * canvas as a fully-editable Document (status "done") seeded with the
+ * transcript — so it gets editing, chat, export, and the sources panel like any
+ * other artifact, plus a "Watch" link back to the video via `sourceUrl`. It's
+ * still source-eligible for other research (documents are sources when done).
+ * Returns true on success so the caller can clear its input.
  */
 export async function ingestYouTube(
   editor: Editor,
@@ -39,22 +42,19 @@ export async function ingestYouTube(
 
   const start = anchor ?? editor.getViewportPageBounds().center;
   const id = createShapeId();
-  editor.createShape<UploadNodeShape>({
+  // Remaining props (sources, comments, sourceSnapshots, etc.) fall back to
+  // DocumentNode's getDefaultProps — same as a hand-made "New document".
+  editor.createShape<DocumentNodeShape>({
     id,
-    type: "canvas-ai-upload",
-    x: start.x - UPLOAD_W / 2,
-    y: start.y - UPLOAD_H / 2,
+    type: "canvas-ai-document",
+    x: start.x - DOCUMENT_NODE_DEFAULT_W / 2,
+    y: start.y - DOCUMENT_NODE_DEFAULT_H / 2,
     props: {
-      w: UPLOAD_W,
-      h: UPLOAD_H,
-      filename: data.title,
-      kind: "youtube",
-      preview: data.transcript.slice(0, PREVIEW_LEN),
-      fullText: data.transcript,
-      pageCount: 0,
-      bytes: 0,
-      lowText: false,
-      ocr: false,
+      w: DOCUMENT_NODE_DEFAULT_W,
+      h: DOCUMENT_NODE_DEFAULT_H,
+      title: data.title,
+      markdown: data.transcript,
+      status: "done",
       sourceUrl: data.url,
     },
   });

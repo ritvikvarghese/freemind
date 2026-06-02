@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import { reportStorageError } from "./quotaToast";
 import { deleteChatHistoriesForBoard } from "./chatHistory";
 import { deleteConnectorsForBoard } from "./connectors";
+import { deleteCanvasChatsForBoard } from "./canvasChats";
 
 // One workspace = one Board. tldraw stores its IndexedDB data under
 // `persistenceKey`, so each board gets its own isolated store. We keep that
@@ -147,6 +148,8 @@ export function deleteBoard(id: string): void {
   void deleteChatHistoriesForBoard(target.persistenceKey);
   // Same for manual connectors stored against this board's persistenceKey.
   void deleteConnectorsForBoard(target.persistenceKey);
+  // And the per-canvas chat sessions (canvas-ai-canvas-chats-v1).
+  void deleteCanvasChatsForBoard(target.persistenceKey);
 }
 
 // Rename a board. No-op if the title is unchanged, the board doesn't exist,
@@ -162,6 +165,29 @@ export function renameBoard(id: string, title: string): void {
   // Skip the write if nothing actually changed (saves a notify + storage hit).
   const changed = next.some((b, i) => b.title !== boards[i].title);
   if (!changed) return;
+  writeRaw(next);
+}
+
+// Persist a manual ordering of the board list. `orderedIds` is the desired
+// order; any board id missing from it is appended (defensive — keeps boards
+// that raced in from another tab). Pure reorder — createdAt and every other
+// field is untouched, so the displayed dates don't change. No-op if the order
+// is already identical.
+export function reorderBoards(orderedIds: string[]): void {
+  const boards = getBoards();
+  const byId = new Map(boards.map((b) => [b.id, b]));
+  const next: Board[] = [];
+  for (const id of orderedIds) {
+    const b = byId.get(id);
+    if (b) {
+      next.push(b);
+      byId.delete(id);
+    }
+  }
+  for (const b of byId.values()) next.push(b); // any not listed
+  if (next.length === boards.length && next.every((b, i) => b.id === boards[i].id)) {
+    return;
+  }
   writeRaw(next);
 }
 

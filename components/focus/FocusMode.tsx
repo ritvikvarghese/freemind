@@ -19,6 +19,7 @@ import {
   Image as ImageIcon,
   MonitorPlay,
   MessageSquare,
+  ExternalLink,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -317,6 +318,7 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
         title={title}
         onTitleChange={handleTitleChange}
         markdown={markdown}
+        sourceUrl={shape?.props.sourceUrl ?? ""}
         onClose={handleClose}
         isChatOpen={isChatOpen}
         onToggleChat={() => setIsChatOpen((v) => !v)}
@@ -406,6 +408,7 @@ function Header({
   title,
   onTitleChange,
   markdown,
+  sourceUrl,
   onClose,
   isChatOpen,
   onToggleChat,
@@ -414,6 +417,7 @@ function Header({
   title: string;
   onTitleChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   markdown: string;
+  sourceUrl: string;
   onClose: () => void;
   isChatOpen: boolean;
   onToggleChat: () => void;
@@ -430,6 +434,18 @@ function Header({
           spellCheck={false}
           className="flex-1 min-w-0 bg-transparent text-[15px] font-medium tracking-tight text-text-primary outline-none placeholder:text-text-tertiary"
         />
+        {sourceUrl ? (
+          <a
+            href={sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            title="Watch the source video"
+            className="flex h-7 items-center gap-1.5 rounded-button px-2 text-[12px] text-text-secondary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
+          >
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+            Watch
+          </a>
+        ) : null}
         <ExportButtons title={title} markdown={markdown} />
         {openCommentCount > 0 ? (
           <button

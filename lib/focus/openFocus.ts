@@ -20,10 +20,6 @@ export function closeFocus(): void {
   notify();
 }
 
-export function getFocusShapeId(): TLShapeId | null {
-  return openShapeId;
-}
-
 function subscribe(cb: () => void): () => void {
   listeners.add(cb);
   return () => listeners.delete(cb);

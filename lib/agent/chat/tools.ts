@@ -23,16 +23,17 @@ export const PROPOSE_EDIT_TOOL = {
       anchor_before: {
         type: "string",
         description:
-          "20-40 chars immediately before old_text in the current doc. Used to disambiguate repeated text. Use empty string only if old_text starts at the document.",
+          "20-40 chars immediately before old_text in the current doc. Used to disambiguate repeated text. Empty if old_text starts the document. When old_text is empty (insert), the new text goes right AFTER this anchor.",
       },
       old_text: {
         type: "string",
-        description: "Exact substring of the current doc to replace.",
+        description:
+          "Exact substring of the current doc to replace. Use an EMPTY string to INSERT instead of replace, e.g. writing into an empty document or appending new content.",
       },
       anchor_after: {
         type: "string",
         description:
-          "20-40 chars immediately after old_text in the current doc. Empty if old_text ends the doc.",
+          "20-40 chars immediately after old_text in the current doc. Empty if old_text ends the doc. When old_text is empty (insert), the new text goes right BEFORE this anchor; leave both anchors empty to append at the very end.",
       },
       new_text: {
         type: "string",
@@ -95,6 +96,15 @@ export function peekPartialRationale(partialJson: string): string | null {
   return null;
 }
 
+/**
+ * Safety net for proposed edits: the prompt forbids em/en dashes, but if the
+ * model slips one in we strip it here so it never reaches the document. Spaced
+ * dashes (" word - word ") become ", "; bare ones become a plain hyphen.
+ */
+export function sanitizeEditText(s: string): string {
+  return s.replace(/\s*[—–]\s*/g, ", ").replace(/[—–]/g, "-");
+}
+
 export function parseProposeEdit(json: string): ProposeEditInput | null {
   try {
     const obj = JSON.parse(json) as Partial<ProposeEditInput>;
@@ -107,7 +117,7 @@ export function parseProposeEdit(json: string): ProposeEditInput | null {
         anchor_before: obj.anchor_before ?? "",
         old_text: obj.old_text,
         anchor_after: obj.anchor_after ?? "",
-        new_text: obj.new_text,
+        new_text: sanitizeEditText(obj.new_text),
         rationale: obj.rationale,
       };
     }
@@ -129,7 +139,7 @@ export function parseProposeReplaceSection(
     ) {
       return {
         heading: obj.heading,
-        new_markdown: obj.new_markdown,
+        new_markdown: sanitizeEditText(obj.new_markdown),
         rationale: obj.rationale,
       };
     }

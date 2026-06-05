@@ -1,15 +1,18 @@
 "use client";
 
-import { Check, X, AlertTriangle, Ban } from "lucide-react";
+import { Check, X, AlertTriangle, Ban, RotateCcw } from "lucide-react";
 import type { Proposal } from "@/lib/storage/chatTypes";
 
 type Props = {
   proposal: Proposal;
   onAccept: () => void;
   onReject: () => void;
+  /** Re-ask the AI to make this edit against the current doc (stale only). */
+  onRedo?: () => void;
 };
 
-export function ProposalCard({ proposal, onAccept, onReject }: Props) {
+export function ProposalCard({ proposal, onAccept, onReject, onRedo }: Props) {
+  const isStale = proposal.status === "stale";
   const acceptDisabled =
     proposal.status === "stale" ||
     proposal.status === "blocked" ||
@@ -43,14 +46,24 @@ export function ProposalCard({ proposal, onAccept, onReject }: Props) {
         >
           <X className="h-3 w-3" aria-hidden /> Reject
         </button>
-        <button
-          type="button"
-          onClick={onAccept}
-          disabled={acceptDisabled}
-          className="flex items-center gap-1 rounded-button bg-accent px-2 py-1 text-[11px] font-medium text-on-accent disabled:opacity-40"
-        >
-          <Check className="h-3 w-3" aria-hidden /> Accept
-        </button>
+        {isStale && onRedo ? (
+          <button
+            type="button"
+            onClick={onRedo}
+            className="flex items-center gap-1 rounded-button bg-accent px-2 py-1 text-[11px] font-medium text-on-accent"
+          >
+            <RotateCcw className="h-3 w-3" aria-hidden /> Redo
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onAccept}
+            disabled={acceptDisabled}
+            className="flex items-center gap-1 rounded-button bg-accent px-2 py-1 text-[11px] font-medium text-on-accent disabled:opacity-40"
+          >
+            <Check className="h-3 w-3" aria-hidden /> Accept
+          </button>
+        )}
       </div>
     </div>
   );
@@ -115,7 +128,7 @@ function StatusLine({ status }: { status: Proposal["status"] }) {
         style={{ color: "var(--color-error)" }}
       >
         <AlertTriangle className="h-3 w-3" aria-hidden />
-        Stale — document changed. Reject and re-prompt.
+        Stale — the document changed. Redo to re-apply it.
       </div>
     );
   if (status === "blocked")

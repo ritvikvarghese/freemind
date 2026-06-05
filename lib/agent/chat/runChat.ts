@@ -18,12 +18,16 @@ const MODEL =
 
 const MAX_TOKENS = 8_000;
 
+export type WebSearch = { query: string; urls: string[] };
+
 export type ToolUseCallbacks = {
   onTextDelta: (text: string) => void;
   onToolUseStart: (id: string, name: string) => void;
   onToolUseInputDelta: (id: string, partialJson: string) => void;
   onToolUseEnd: (id: string, name: string, finalInputJson: string) => void;
-  onDone: (text: string) => void;
+  /** Fired when a web_search result block arrives (Deepsearch turns only). */
+  onWebSearch?: (query: string, urls: string[]) => void;
+  onDone: (text: string, webSearches: WebSearch[]) => void;
   onError: (message: string) => void;
 };
 
@@ -31,6 +35,13 @@ export type RunChatInput = {
   doc: { markdown: string; sources: SourceSnapshot[] };
   history: ChatMessage[];
   userMessage: string;
+  /** > 0 turns on the web_search server tool for this turn (Freeform/Deepsearch).
+   *  The propose_edit / propose_replace_section tools are ALWAYS available, so a
+   *  web turn can both search and write results into the document. */
+  webSearchMaxUses?: number;
+  /** When true (Deepsearch), the model is told to deliver web findings INTO the
+   *  document by default rather than answering at length in chat. */
+  webSearchWritesDoc?: boolean;
 } & ToolUseCallbacks;
 
 export function runChat(input: RunChatInput): AbortController {
@@ -43,11 +54,16 @@ export function runChat(input: RunChatInput): AbortController {
 
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
 
+  const webSearchMaxUses = input.webSearchMaxUses ?? 0;
+
   // Stable, prefix-cached system prompt block holds the doc + sources.
   const systemBlocks = [
     {
       type: "text" as const,
-      text: buildChatSystemPrompt(input.doc.markdown, input.doc.sources),
+      text: buildChatSystemPrompt(input.doc.markdown, input.doc.sources, {
+        webSearch: webSearchMaxUses > 0,
+        writeToDocDefault: input.webSearchWritesDoc ?? false,
+      }),
       cache_control: { type: "ephemeral" as const },
     },
   ];
@@ -72,6 +88,25 @@ export function runChat(input: RunChatInput): AbortController {
 
   let finalText = "";
 
+  // web_search is a server tool; pair queries to their result URLs by id.
+  const queryByToolUseId = new Map<string, string>();
+  const webSearches: WebSearch[] = [];
+
+  // Edit-proposal tools are always present (so any mode can write into the doc);
+  // web_search is added only when this is a Deepsearch turn.
+  const tools = [
+    ...CHAT_TOOLS,
+    ...(webSearchMaxUses > 0
+      ? [
+          {
+            type: "web_search_20250305",
+            name: "web_search",
+            max_uses: webSearchMaxUses,
+          },
+        ]
+      : []),
+  ];
+
   (async () => {
     try {
       const stream = client.messages.stream(
@@ -82,12 +117,38 @@ export function runChat(input: RunChatInput): AbortController {
           messages,
           // Cast: tool schemas use `as const` for compile-time literal types,
           // which produces readonly arrays; Anthropic's SDK types want mutable.
-          tools: CHAT_TOOLS as unknown as Parameters<
+          tools: tools as unknown as Parameters<
             typeof client.messages.stream
           >[0]["tools"],
         },
         { signal: controller.signal },
       );
+
+      // Higher-level event for complete web_search blocks (server tool). The
+      // raw streamEvent handler below still drives text + client tool_use; the
+      // two don't overlap (server_tool_use / web_search_tool_result aren't
+      // "tool_use", so streamEvent ignores them).
+      stream.on("contentBlock", (block) => {
+        if (block.type === "server_tool_use" && block.name === "web_search") {
+          const q = (block.input as { query?: string } | undefined)?.query;
+          if (q) queryByToolUseId.set(block.id, q);
+          return;
+        }
+        if (block.type === "web_search_tool_result") {
+          const query = queryByToolUseId.get(block.tool_use_id) ?? "";
+          const items = Array.isArray(block.content) ? block.content : [];
+          const urls = items
+            .filter(
+              (b: { type?: string; url?: string }) =>
+                b.type === "web_search_result" && typeof b.url === "string",
+            )
+            .map((b) => b.url as string);
+          if (urls.length > 0 || query) {
+            webSearches.push({ query, urls });
+            input.onWebSearch?.(query, urls);
+          }
+        }
+      });
 
       stream.on("streamEvent", (event) => {
         if (event.type === "content_block_start") {
@@ -127,11 +188,11 @@ export function runChat(input: RunChatInput): AbortController {
       });
 
       await stream.finalMessage();
-      input.onDone(finalText);
+      input.onDone(finalText, webSearches);
     } catch (err) {
       if (err instanceof APIUserAbortError || controller.signal.aborted) {
         // Treat abort as a clean stop with whatever text we have so far.
-        input.onDone(finalText);
+        input.onDone(finalText, webSearches);
         return;
       }
       input.onError(describeError(err));

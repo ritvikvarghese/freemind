@@ -6,12 +6,15 @@ import {
   createShapeId,
   getColorStyleItems,
   DefaultColorStyle,
+  DefaultSizeStyle,
   type Editor,
   type TLDefaultColorStyle,
+  type TLDefaultSizeStyle,
 } from "tldraw";
 import {
   Type,
   StickyNote,
+  Pen,
   FileText,
   Upload,
   Image as ImageIcon,
@@ -19,7 +22,7 @@ import {
   Loader2,
   CornerDownLeft,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "../toast";
 import {
   DOCUMENT_NODE_DEFAULT_H,
@@ -36,9 +39,16 @@ export function MinimalToolbar() {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const [ytOpen, setYtOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
+  const [penOpen, setPenOpen] = useState(false);
 
   return (
-    <div className="pointer-events-auto fixed left-4 top-1/2 -translate-y-1/2 z-30 flex flex-col gap-1 rounded-panel bg-elevated border border-hairline p-1 shadow-[var(--shadow-panel)]">
+    <div
+      className="pointer-events-auto fixed left-4 top-1/2 -translate-y-1/2 z-30 flex flex-col gap-1 rounded-panel bg-elevated border border-hairline p-1 shadow-[var(--shadow-panel)]"
+      // Don't let toolbar clicks reach the canvas (would deselect shapes / pop
+      // the floating create palette or context menu).
+      onPointerDown={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.stopPropagation()}
+    >
       <ToolbarButton
         label="Add text (click canvas to place)"
         onClick={() => editor.setCurrentTool("text")}
@@ -51,6 +61,7 @@ export function MinimalToolbar() {
           active={noteOpen}
           onClick={() => {
             setYtOpen(false);
+            setPenOpen(false);
             setNoteOpen((v) => !v);
           }}
         >
@@ -60,9 +71,25 @@ export function MinimalToolbar() {
           <NoteColorPicker editor={editor} onClose={() => setNoteOpen(false)} />
         ) : null}
       </div>
+      <div className="relative">
+        <ToolbarButton
+          label="Pen (pick thickness, then draw)"
+          active={penOpen}
+          onClick={() => {
+            setYtOpen(false);
+            setNoteOpen(false);
+            setPenOpen((v) => !v);
+          }}
+        >
+          <Pen className="h-4 w-4" aria-hidden />
+        </ToolbarButton>
+        {penOpen ? (
+          <PenPicker editor={editor} onClose={() => setPenOpen(false)} />
+        ) : null}
+      </div>
       <ToolbarButton
         label="New document"
-        onClick={() => addBlankDocAtViewportCenter(editor)}
+        onClick={() => createBlankDoc(editor)}
       >
         <FileText className="h-4 w-4" aria-hidden />
       </ToolbarButton>
@@ -73,7 +100,7 @@ export function MinimalToolbar() {
         <ImageIcon className="h-4 w-4" aria-hidden />
       </ToolbarButton>
       <ToolbarButton
-        label="Upload PDF or markdown"
+        label="Upload PDF, Word, or markdown"
         onClick={() => fileInputRef.current?.click()}
       >
         <Upload className="h-4 w-4" aria-hidden />
@@ -83,6 +110,7 @@ export function MinimalToolbar() {
         active={ytOpen}
         onClick={() => {
           setNoteOpen(false);
+          setPenOpen(false);
           setYtOpen((v) => !v);
         }}
       >
@@ -94,7 +122,7 @@ export function MinimalToolbar() {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".pdf,.md,.markdown,application/pdf,text/markdown,text/plain"
+        accept=".pdf,.docx,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,text/plain"
         multiple
         className="hidden"
         onChange={async (e) => {
@@ -134,9 +162,9 @@ async function addImages(editor: Editor, files: File[]): Promise<void> {
 
 // Swatch flyout for the sticky-note tool. Picking a color arms tldraw's native
 // note tool with that color (setStyleForNextShapes) so the next placed note
-// uses it. Swatch fills + ordering come live from the editor theme (light/dark),
-// so they exactly match the note that gets dropped. White is excluded by
-// getColorStyleItems (tldraw treats it as an easter egg the panel ignores).
+// uses it. Swatch fills come live from the editor theme (light/dark), so they
+// exactly match the note that gets dropped. Yellow leads (the default) and grey
+// is swapped for white; the rest follow tldraw's order. Laid out two per row.
 function NoteColorPicker({
   editor,
   onClose,
@@ -149,9 +177,13 @@ function NoteColorPicker({
     () => {
       const colors = editor.getCurrentTheme().colors[editor.getColorMode()];
       const fills = colors as unknown as Record<string, { noteFill: string }>;
-      return getColorStyleItems(colors).map((item) => ({
-        name: item.value,
-        fill: fills[item.value]?.noteFill,
+      // Replace grey with white, then lead with yellow (the default).
+      const names = getColorStyleItems(colors)
+        .map((item) => (item.value === "grey" ? "white" : item.value))
+        .filter((name) => name !== "yellow");
+      return ["yellow", ...names].map((name) => ({
+        name,
+        fill: fills[name]?.noteFill,
       }));
     },
     [editor],
@@ -162,6 +194,15 @@ function NoteColorPicker({
     [editor],
   );
 
+  // Yellow is the default sticky-note color: when the armed color is tldraw's
+  // global default (black, also what the pen sets), open on yellow. A color the
+  // user actively picked for notes persists.
+  useEffect(() => {
+    if (editor.getStyleForNextShape(DefaultColorStyle) === "black") {
+      editor.setStyleForNextShapes(DefaultColorStyle, "yellow");
+    }
+  }, [editor]);
+
   function pick(name: string) {
     editor.setStyleForNextShapes(DefaultColorStyle, name as TLDefaultColorStyle);
     editor.setCurrentTool("note");
@@ -170,7 +211,7 @@ function NoteColorPicker({
 
   return (
     <div
-      className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 z-30 grid grid-cols-3 gap-2.5 rounded-panel border border-hairline bg-elevated p-2.5 shadow-[var(--shadow-floating)]"
+      className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 z-30 grid grid-cols-2 gap-2.5 rounded-panel border border-hairline bg-elevated p-2.5 shadow-[var(--shadow-floating)]"
       onPointerDown={(e) => e.stopPropagation()}
     >
       {swatches.map((s) => (
@@ -188,6 +229,66 @@ function NoteColorPicker({
               : "border-hairline")
           }
         />
+      ))}
+    </div>
+  );
+}
+
+// Thickness flyout for the pen. Picking a level arms tldraw's native draw tool
+// with that stroke size and the theme-aware "black" ink, then switches to it.
+const PEN_SIZES: { size: TLDefaultSizeStyle; dot: number; label: string }[] = [
+  { size: "s", dot: 4, label: "Thin" },
+  { size: "m", dot: 8, label: "Medium" },
+  { size: "l", dot: 13, label: "Thick" },
+];
+
+function PenPicker({
+  editor,
+  onClose,
+}: {
+  editor: Editor;
+  onClose: () => void;
+}) {
+  const active = useValue(
+    "pen-size-active",
+    () => editor.getStyleForNextShape(DefaultSizeStyle),
+    [editor],
+  );
+
+  function pick(size: TLDefaultSizeStyle) {
+    // tldraw's "black" is theme-aware ink: dark on the light canvas and
+    // near-white on the dark canvas, and it flips automatically when the theme
+    // changes — so strokes stay visible (black on light, white on dark).
+    editor.setStyleForNextShapes(DefaultColorStyle, "black");
+    editor.setStyleForNextShapes(DefaultSizeStyle, size);
+    editor.setCurrentTool("draw");
+    onClose();
+  }
+
+  return (
+    <div
+      className="absolute left-[calc(100%+8px)] top-1/2 z-30 flex -translate-y-1/2 items-center gap-2 rounded-panel border border-hairline bg-elevated p-2.5 shadow-[var(--shadow-floating)]"
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      {PEN_SIZES.map((s) => (
+        <button
+          key={s.size}
+          type="button"
+          title={s.label}
+          aria-label={`Pen thickness: ${s.label}`}
+          onClick={() => pick(s.size)}
+          className={
+            "grid h-9 w-9 place-items-center rounded-button border transition-transform duration-100 hover:scale-105 " +
+            (active === s.size
+              ? "border-text-secondary/60 bg-surface-hover ring-1 ring-text-secondary/40"
+              : "border-hairline")
+          }
+        >
+          <span
+            className="rounded-full bg-text-primary"
+            style={{ width: s.dot, height: s.dot }}
+          />
+        </button>
       ))}
     </div>
   );
@@ -282,14 +383,20 @@ function YouTubeInput({
   );
 }
 
-function addBlankDocAtViewportCenter(editor: Editor) {
-  const viewport = editor.getViewportPageBounds();
+/** Create a blank document node centered at `center` (defaults to the viewport
+ *  center). Exported so the double-click floating toolbar can drop a doc at the
+ *  cursor too. */
+export function createBlankDoc(
+  editor: Editor,
+  center?: { x: number; y: number },
+) {
+  const at = center ?? editor.getViewportPageBounds().center;
   const id = createShapeId();
   editor.createShape<DocumentNodeShape>({
     id,
     type: "canvas-ai-document",
-    x: viewport.center.x - DOCUMENT_NODE_DEFAULT_W / 2,
-    y: viewport.center.y - DOCUMENT_NODE_DEFAULT_H / 2,
+    x: at.x - DOCUMENT_NODE_DEFAULT_W / 2,
+    y: at.y - DOCUMENT_NODE_DEFAULT_H / 2,
     props: {
       w: DOCUMENT_NODE_DEFAULT_W,
       h: DOCUMENT_NODE_DEFAULT_H,

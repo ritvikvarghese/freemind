@@ -14,6 +14,8 @@ import {
   Upload,
   ShieldCheck,
   ShieldAlert,
+  KeyRound,
+  ArrowRight,
 } from "lucide-react";
 import Anthropic, { AuthenticationError, APIError } from "@anthropic-ai/sdk";
 import { useEditor } from "tldraw";
@@ -151,12 +153,26 @@ export function ApiKeyPanel() {
   return (
     <div
       ref={panelRef}
-      className="pointer-events-auto fixed top-4 z-40"
+      className="pointer-events-auto fixed top-4 z-40 flex items-center gap-2"
       style={{
         right: openChatId ? 416 : 16,
         transition: "right 140ms var(--ease-out-fast)",
       }}
+      onContextMenu={(e) => e.stopPropagation()}
     >
+      {/* First-run nudge: only while no key is set and the panel is closed.
+          Disappears for good once a key is saved. */}
+      {!hasKey && !open ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="flex items-center gap-1.5 rounded-button border border-[var(--color-accent)] bg-elevated px-2.5 py-1.5 text-[12px] font-medium text-text-primary shadow-[var(--shadow-floating)] transition-colors duration-100 hover:bg-surface-hover"
+        >
+          <KeyRound className="h-3.5 w-3.5 text-[var(--color-accent)]" aria-hidden />
+          Add your API key
+          <ArrowRight className="h-3.5 w-3.5 text-text-tertiary" aria-hidden />
+        </button>
+      ) : null}
       <button
         type="button"
         title="Settings"
@@ -165,12 +181,6 @@ export function ApiKeyPanel() {
         className="h-9 w-9 grid place-items-center rounded-button text-text-secondary hover:text-text-primary bg-elevated border border-hairline hover:border-hairline-hover transition-colors duration-100"
       >
         <SettingsIcon className="h-4 w-4" aria-hidden />
-        {hasKey ? (
-          <span
-            className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-text-primary"
-            aria-hidden
-          />
-        ) : null}
       </button>
 
       {open ? (

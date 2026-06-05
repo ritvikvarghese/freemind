@@ -6,6 +6,7 @@ import {
   type PdfExtractResult,
 } from "@/lib/extract/pdf";
 import { extractMarkdown, MAX_MD_BYTES } from "@/lib/extract/markdown";
+import { extractDocx, MAX_DOCX_BYTES } from "@/lib/extract/docx";
 import { toast } from "./toast";
 import type { UploadNodeShape } from "./shapes/UploadNode";
 
@@ -25,12 +26,19 @@ export async function ingestFiles(
   for (const file of files) {
     const kind = classify(file);
     if (kind === "skip") {
-      toast(`Skipped "${file.name}" — only PDF and markdown supported.`, "error");
+      toast(
+        `Skipped "${file.name}" — only PDF, Word (.docx), and markdown supported.`,
+        "error",
+      );
       continue;
     }
 
     const result =
-      kind === "pdf" ? await extractPdf(file) : await extractMarkdown(file);
+      kind === "pdf"
+        ? await extractPdf(file)
+        : kind === "docx"
+          ? await extractDocx(file)
+          : await extractMarkdown(file);
 
     if (!result.ok) {
       const err = result.error;
@@ -38,7 +46,9 @@ export async function ingestFiles(
         const limitMb =
           kind === "pdf"
             ? "20"
-            : (MAX_MD_BYTES / 1024 / 1024).toFixed(0);
+            : kind === "docx"
+              ? (MAX_DOCX_BYTES / 1024 / 1024).toFixed(0)
+              : (MAX_MD_BYTES / 1024 / 1024).toFixed(0);
         toast(
           `"${file.name}" is ${(err.bytes / 1024 / 1024).toFixed(1)} MB — max is ${limitMb} MB.`,
           "error",
@@ -98,9 +108,16 @@ async function fileToBase64(file: Blob): Promise<string> {
   return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
 }
 
-function classify(file: File): "pdf" | "markdown" | "skip" {
+function classify(file: File): "pdf" | "docx" | "markdown" | "skip" {
   const name = file.name.toLowerCase();
   if (file.type === "application/pdf" || name.endsWith(".pdf")) return "pdf";
+  if (
+    file.type ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    name.endsWith(".docx")
+  ) {
+    return "docx";
+  }
   if (
     file.type === "text/markdown" ||
     file.type === "text/plain" ||
@@ -130,6 +147,7 @@ function buildPdfProps(
     ocr: false,
     sourceUrl: "",
     pdfData,
+    notes: [],
   };
 }
 
@@ -151,5 +169,6 @@ function buildMdProps(
     ocr: false,
     sourceUrl: "",
     pdfData: "",
+    notes: [],
   };
 }

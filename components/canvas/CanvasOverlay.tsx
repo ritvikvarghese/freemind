@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 import { MinimalToolbar } from "./toolbar/MinimalToolbar";
+import { FloatingToolbar } from "./toolbar/FloatingToolbar";
+import { BoardSidebar } from "./BoardSidebar";
 import { EmptyState } from "./EmptyState";
 import { FloatingPrompt } from "./prompt/FloatingPrompt";
 import { FocusMode } from "@/components/focus/FocusMode";
@@ -32,7 +34,9 @@ export function CanvasOverlay() {
   return (
     <>
       <EmptyState />
+      <BoardSidebar />
       <MinimalToolbar />
+      <FloatingToolbar />
       <ApiKeyPanel />
       <ChatsMenu />
       <FloatingPrompt />

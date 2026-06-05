@@ -3,8 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useEditor, useValue, type TLShapeId } from "tldraw";
-import { X, Loader2, ScanText, AlertTriangle } from "lucide-react";
+import {
+  X,
+  Loader2,
+  ScanText,
+  AlertTriangle,
+  Maximize2,
+  Minimize2,
+  Image as ImageIcon,
+} from "lucide-react";
 import type { ImageNodeShape } from "@/components/canvas/shapes/ImageNode";
+import { readImageText } from "@/components/canvas/ingestImages";
 
 type Props = {
   shapeId: TLShapeId;
@@ -29,13 +38,31 @@ export function ImageFocusMode({ shapeId, onClose }: Props) {
   );
 
   const [ocrText, setOcrText] = useState(shape?.props.ocrText ?? "");
+  const [name, setName] = useState(shape?.props.filename ?? "");
   const [mounted, setMounted] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const latest = useRef(ocrText);
+  const latestName = useRef(name);
   const flushTimer = useRef<number | null>(null);
 
   useEffect(() => {
     latest.current = ocrText;
   }, [ocrText]);
+  useEffect(() => {
+    latestName.current = name;
+  }, [name]);
+
+  const flushName = useCallback(() => {
+    const current = editor.getShape(shapeId) as ImageNodeShape | undefined;
+    if (!current) return;
+    const next = latestName.current.trim();
+    if (!next || current.props.filename === next) return;
+    editor.updateShape<ImageNodeShape>({
+      id: shapeId,
+      type: "canvas-ai-image",
+      props: { filename: next },
+    });
+  }, [editor, shapeId]);
 
   // Pull in OCR text that lands after mount (the async OCR pass completing).
   const status = shape?.props.status;
@@ -45,6 +72,10 @@ export function ImageFocusMode({ shapeId, onClose }: Props) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
+
+  const handleRead = useCallback(() => {
+    void readImageText(editor, shapeId);
+  }, [editor, shapeId]);
 
   const flush = useCallback(() => {
     const current = editor.getShape(shapeId) as ImageNodeShape | undefined;
@@ -75,22 +106,42 @@ export function ImageFocusMode({ shapeId, onClose }: Props) {
       if (e.key === "Escape") {
         e.stopPropagation();
         flush();
+        flushName();
         onClose();
       }
     }
     window.addEventListener("keydown", onKey, { capture: true });
     return () =>
       window.removeEventListener("keydown", onKey, { capture: true });
-  }, [onClose, flush]);
+  }, [onClose, flush, flushName]);
 
   useEffect(() => {
     if (!shape) onClose();
   }, [shape, onClose]);
 
   // Flush any pending edit on unmount.
-  useEffect(() => () => flush(), [flush]);
+  useEffect(
+    () => () => {
+      flush();
+      flushName();
+    },
+    [flush, flushName],
+  );
 
   if (!shape) return null;
+
+  // Animated art (GIF / animated WebP) has no extracted text: show a single
+  // full pane, no text column and no full-screen toggle (already one pane).
+  const isAnimated =
+    shape.props.mediaType === "image/gif" ||
+    shape.props.mediaType === "image/webp";
+  const formatLabel =
+    shape.props.mediaType === "image/gif"
+      ? "GIF"
+      : shape.props.mediaType === "image/webp"
+        ? "WebP"
+        : "Image";
+  const single = isAnimated || expanded;
 
   const overlay = (
     <div
@@ -104,20 +155,37 @@ export function ImageFocusMode({ shapeId, onClose }: Props) {
       className="canvas-ai-focus-root fixed inset-0 z-50 flex flex-col bg-overlay"
       style={{
         opacity: mounted ? 1 : 0,
-        transform: mounted ? "translateY(0)" : "translateY(4px)",
+        transform: mounted ? "scale(1)" : "scale(0.97)",
         transition:
-          "opacity 200ms var(--ease-out-fast), transform 200ms var(--ease-out-fast)",
+          "opacity 200ms var(--ease-out-fast), transform 300ms cubic-bezier(0.16, 1, 0.3, 1)",
       }}
     >
       <div className="border-b border-hairline bg-elevated">
         <div className="mx-auto flex w-full max-w-[1100px] items-center gap-3 px-6 py-3">
           <ScanText className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden />
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[15px] font-medium tracking-tight text-text-primary">
-              {shape.props.filename}
-            </div>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.currentTarget.value)}
+              onBlur={flushName}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  flushName();
+                  e.currentTarget.blur();
+                }
+              }}
+              onKeyUp={(e) => e.stopPropagation()}
+              placeholder="Untitled image"
+              spellCheck={false}
+              aria-label="Image name"
+              title="Rename this image"
+              className="w-full min-w-0 truncate bg-transparent text-[15px] font-medium tracking-tight text-text-primary outline-none placeholder:text-text-tertiary"
+            />
             <div className="text-[11px] text-text-tertiary">
-              Image · {shape.props.naturalW}×{shape.props.naturalH}
+              {formatLabel} · {shape.props.naturalW}×{shape.props.naturalH}
             </div>
           </div>
           <button
@@ -126,6 +194,7 @@ export function ImageFocusMode({ shapeId, onClose }: Props) {
             aria-label="Close focus mode"
             onClick={() => {
               flush();
+              flushName();
               onClose();
             }}
             className="ml-1 grid h-7 w-7 place-items-center rounded-button text-text-secondary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
@@ -136,20 +205,50 @@ export function ImageFocusMode({ shapeId, onClose }: Props) {
       </div>
 
       <div className="flex-1 overflow-hidden bg-app">
-        <div className="mx-auto grid h-full w-full max-w-[1100px] grid-cols-2 gap-6 px-6 py-8">
-          <div className="flex items-center justify-center overflow-auto rounded-node border border-hairline bg-elevated p-3">
-            {shape.props.dataUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={shape.props.dataUrl}
-                alt={shape.props.filename}
-                className="max-h-full max-w-full object-contain"
-              />
-            ) : (
-              <span className="text-text-tertiary text-[12px]">No image</span>
-            )}
+        <div
+          className={`mx-auto grid h-full w-full gap-6 px-6 py-8 ${
+            single
+              ? "max-w-[1600px] grid-cols-1"
+              : "max-w-[1100px] grid-cols-2"
+          }`}
+        >
+          {/* Left: the image as uploaded */}
+          <div className="flex flex-col overflow-hidden">
+            <div className="mb-2 flex items-center gap-2 text-[11px] text-text-tertiary">
+              <ImageIcon className="h-3 w-3" aria-hidden />
+              {formatLabel}
+              {!isAnimated && (
+                <button
+                  type="button"
+                  onClick={() => setExpanded((v) => !v)}
+                  title={expanded ? "Exit full screen" : "Full screen"}
+                  aria-label={expanded ? "Exit full screen" : "Full screen"}
+                  className="ml-auto grid h-6 w-6 place-items-center rounded-button text-text-tertiary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
+                >
+                  {expanded ? (
+                    <Minimize2 className="h-3.5 w-3.5" aria-hidden />
+                  ) : (
+                    <Maximize2 className="h-3.5 w-3.5" aria-hidden />
+                  )}
+                </button>
+              )}
+            </div>
+            <div className="flex flex-1 items-center justify-center overflow-auto rounded-node border border-hairline bg-elevated p-3">
+              {shape.props.dataUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={shape.props.dataUrl}
+                  alt={shape.props.filename}
+                  className="max-h-full max-w-full object-contain"
+                />
+              ) : (
+                <span className="text-text-tertiary text-[12px]">No image</span>
+              )}
+            </div>
           </div>
 
+          {/* Right: editable OCR text (hidden for animated art and full screen) */}
+          {!isAnimated && !expanded && (
           <div className="flex flex-col overflow-hidden">
             <div className="mb-2 flex items-center gap-2 text-[11px] text-text-tertiary">
               {shape.props.status === "ocr" ? (
@@ -163,7 +262,7 @@ export function ImageFocusMode({ shapeId, onClose }: Props) {
                     className="h-3 w-3 text-[var(--color-error)]"
                     aria-hidden
                   />
-                  OCR failed — type the text manually if needed.
+                  Couldn’t read text — try again or type it manually.
                 </>
               ) : (
                 <>
@@ -171,6 +270,18 @@ export function ImageFocusMode({ shapeId, onClose }: Props) {
                   Extracted text (editable)
                 </>
               )}
+              {shape.props.status !== "ocr" ? (
+                <button
+                  type="button"
+                  onClick={handleRead}
+                  title="Reads text from the image with Claude — uses tokens"
+                  className="ml-auto flex items-center gap-1.5 rounded-button border border-hairline px-2 py-1 text-[11px] text-text-secondary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
+                >
+                  <ScanText className="h-3 w-3" aria-hidden />
+                  {shape.props.ocrText ? "Read again" : "Read image"}
+                  <span className="text-text-tertiary">· uses tokens</span>
+                </button>
+              ) : null}
             </div>
             <textarea
               value={ocrText}
@@ -185,6 +296,7 @@ export function ImageFocusMode({ shapeId, onClose }: Props) {
               className="flex-1 resize-none rounded-node border border-hairline bg-elevated p-4 text-[14px] leading-relaxed text-text-primary outline-none placeholder:text-text-tertiary focus:border-hairline-hover"
             />
           </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { Loader2 } from "lucide-react";
-import { markdownUrlTransform } from "@/lib/markdown/urlTransform";
+import { MarkdownView } from "@/components/MarkdownView";
 
 type Props = {
   markdown: string;
@@ -48,12 +46,7 @@ export function StreamingView({ markdown, showIndicator = true }: Props) {
     <div ref={scrollRef} className="canvas-ai-streaming-view h-full overflow-auto">
       <div className="canvas-ai-prose">
         {markdown ? (
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            urlTransform={markdownUrlTransform}
-          >
-            {markdown}
-          </ReactMarkdown>
+          <MarkdownView>{markdown}</MarkdownView>
         ) : null}
         {showIndicator ? (
           <div className="mt-3 inline-flex items-center gap-2 text-[12px] text-text-tertiary">

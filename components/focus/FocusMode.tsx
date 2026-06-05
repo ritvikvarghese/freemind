@@ -21,9 +21,7 @@ import {
   MessageSquare,
   ExternalLink,
 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { markdownUrlTransform } from "@/lib/markdown/urlTransform";
+import { MarkdownView } from "@/components/MarkdownView";
 import type {
   DocumentNodeShape,
   SourceSnapshot,
@@ -34,11 +32,21 @@ import { ExportButtons } from "./ExportButtons";
 import { UploadFocusMode } from "./UploadFocusMode";
 import { ImageFocusMode } from "./ImageFocusMode";
 import { ChatPanel, type ChatPanelHandle } from "./chat/ChatPanel";
+import { DocChatsMenu } from "./chat/DocChatsMenu";
+import { DocChatBottomBar } from "./chat/DocChatBottomBar";
+import {
+  deleteDocumentChat,
+  migrateLegacyDocumentChat,
+  useDocumentChat,
+  useDocumentChats,
+} from "@/lib/storage/documentChats";
 import { getCurrentBoardPersistenceKey } from "@/lib/storage/currentBoard";
+import { useApiKey } from "@/lib/storage/apiKey";
 import { installDiffDecorationsPlugin } from "./editor/diffDecorations";
 import { getProposals } from "@/lib/agent/chat/proposalRegistry";
 import { CommentLayer, type CommentLayerHandle } from "./comments/CommentLayer";
 import { CommentMargin } from "./comments/CommentMargin";
+import { BlockHandle } from "./editor/BlockHandle";
 import {
   installCommentDecorationsPlugin,
   resolveComments,
@@ -205,26 +213,28 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
   const status = shape?.props.status ?? "done";
   const isStreaming = status === "researching" || status === "streaming";
 
-  // Chat-open state, persisted per artifact in localStorage so toggling
-  // survives reload. Default closed.
-  const [isChatOpen, setIsChatOpen] = useState(() => {
-    if (typeof window === "undefined") return false;
-    try {
-      return window.localStorage.getItem(`canvas-ai:chat-open:${shapeId}`) === "1";
-    } catch {
-      return false;
-    }
-  });
+  const boardPersistenceKey =
+    getCurrentBoardPersistenceKey() ?? "canvas-ai-v1";
+  const { hasKey: hasApiKey } = useApiKey();
+
+  // Multi-chat: `openChatId` is the open session (null = none, show the pinned
+  // composer instead); `chatsListOpen` is the top-icon dropdown. We default
+  // closed each open rather than persist a possibly-deleted session id.
+  const [openChatId, setOpenChatId] = useState<string | null>(null);
+  const [chatsListOpen, setChatsListOpen] = useState(false);
+  const openChat = useDocumentChat(openChatId);
+  const docChats = useDocumentChats(shapeId);
+  // The diff-decorations plugin reads proposals for the OPEN session; a ref
+  // keeps its getter current without reinstalling the plugin.
+  const openChatIdRef = useRef<string | null>(openChatId);
   useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        `canvas-ai:chat-open:${shapeId}`,
-        isChatOpen ? "1" : "0",
-      );
-    } catch {
-      /* quota — fine, in-memory state still correct */
-    }
-  }, [shapeId, isChatOpen]);
+    openChatIdRef.current = openChatId;
+  }, [openChatId]);
+
+  // Import a legacy single chat (if any) as the document's first session.
+  useEffect(() => {
+    void migrateLegacyDocumentChat(shapeId, boardPersistenceKey);
+  }, [shapeId, boardPersistenceKey]);
 
   const chatPanelRef = useRef<ChatPanelHandle | null>(null);
   // Tracks the live Tiptap editor instance so ChatPanel re-renders when it
@@ -235,13 +245,38 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
     setLiveEditor(handle?.editor ?? null);
   }, []);
 
-  const handleGenerate = useCallback((selectionText: string) => {
-    setIsChatOpen(true);
-    // Defer until ChatPanel mounts.
-    requestAnimationFrame(() => {
-      chatPanelRef.current?.openWithContext(selectionText);
-    });
+  // Open a NEW draft chat: reserve an id and show the panel, but don't persist
+  // a record until the first message is sent (ChatPanel commits it then). So a
+  // chat never counts or shows in the list until the user has actually prompted.
+  const openDraftChat = useCallback((): string => {
+    const id = crypto.randomUUID();
+    setChatsListOpen(false);
+    setOpenChatId(id);
+    return id;
   }, []);
+
+  // Bubble-toolbar "Add to chat": seed the open chat with the selection, or
+  // open a draft seeded with it (still no record until the user sends).
+  const handleAddToChat = useCallback(
+    (selectionText: string) => {
+      if (!openChatId) openDraftChat();
+      requestAnimationFrame(() => {
+        chatPanelRef.current?.openWithContext(selectionText);
+      });
+    },
+    [openChatId, openDraftChat],
+  );
+
+  const handleDeleteChat = useCallback((id: string) => {
+    deleteDocumentChat(id);
+    setOpenChatId((cur) => (cur === id ? null : cur));
+  }, []);
+
+  // Bottom launcher: reopen the most recent chat, or open a fresh draft.
+  const handleLaunchChat = useCallback(() => {
+    if (docChats.length > 0) setOpenChatId(docChats[0].id);
+    else openDraftChat();
+  }, [docChats, openDraftChat]);
 
   const commentLayerRef = useRef<CommentLayerHandle | null>(null);
 
@@ -265,8 +300,11 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
 
   const diffPluginInstall = useCallback(
     (ed: import("@tiptap/core").Editor) =>
-      installDiffDecorationsPlugin(ed, () => getProposals(shapeId)),
-    [shapeId],
+      installDiffDecorationsPlugin(ed, () => {
+        const id = openChatIdRef.current;
+        return id ? getProposals(id) : [];
+      }),
+    [],
   );
 
   const commentPluginInstall = useCallback(
@@ -293,9 +331,6 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
     [],
   );
 
-  const boardPersistenceKey =
-    getCurrentBoardPersistenceKey() ?? "canvas-ai-v1";
-
   const overlay = (
     <div
       role="dialog"
@@ -309,9 +344,9 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
       className="canvas-ai-focus-root fixed inset-0 z-50 flex flex-col bg-overlay"
       style={{
         opacity: mounted ? 1 : 0,
-        transform: mounted ? "translateY(0)" : "translateY(4px)",
+        transform: mounted ? "scale(1)" : "scale(0.97)",
         transition:
-          "opacity 200ms var(--ease-out-fast), transform 200ms var(--ease-out-fast)",
+          "opacity 200ms var(--ease-out-fast), transform 300ms cubic-bezier(0.16, 1, 0.3, 1)",
       }}
     >
       <Header
@@ -320,15 +355,31 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
         markdown={markdown}
         sourceUrl={shape?.props.sourceUrl ?? ""}
         onClose={handleClose}
-        isChatOpen={isChatOpen}
-        onToggleChat={() => setIsChatOpen((v) => !v)}
+        chatsListOpen={chatsListOpen}
+        onToggleChatsList={() => setChatsListOpen((v) => !v)}
+        chatCount={docChats.length}
+        chatsMenuSlot={
+          chatsListOpen ? (
+            <DocChatsMenu
+              documentId={shapeId}
+              openChatId={openChatId}
+              onOpen={(id) => {
+                setOpenChatId(id);
+                setChatsListOpen(false);
+              }}
+              onNew={openDraftChat}
+              onDelete={handleDeleteChat}
+              onClose={() => setChatsListOpen(false)}
+            />
+          ) : null
+        }
         openCommentCount={comments.filter((c) => !c.resolved).length}
       />
 
       <div
-        className="flex-1 min-h-0 grid"
+        className="relative flex-1 min-h-0 grid"
         style={{
-          gridTemplateColumns: isChatOpen ? "1fr 400px" : "1fr",
+          gridTemplateColumns: openChatId ? "1fr 400px" : "1fr",
         }}
       >
         <ScrollColumn>
@@ -342,16 +393,19 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
               key={shapeId}
               initialMarkdown={shape?.props.markdown ?? ""}
               onChange={handleMarkdownChange}
-              onGenerate={handleGenerate}
+              onGenerate={handleAddToChat}
               onComment={handleComment}
               extraPlugins={extraPlugins}
               overlay={({ editor: ed, wrapperRef }) => (
-                <CommentMargin
-                  editor={ed}
-                  wrapperRef={wrapperRef}
-                  comments={comments}
-                  onOpen={handleOpenComment}
-                />
+                <>
+                  <BlockHandle editor={ed} wrapperRef={wrapperRef} />
+                  <CommentMargin
+                    editor={ed}
+                    wrapperRef={wrapperRef}
+                    comments={comments}
+                    onOpen={handleOpenComment}
+                  />
+                </>
               )}
             />
           )}
@@ -367,17 +421,39 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
             userPrompt={userPrompt}
           />
         </ScrollColumn>
-        {isChatOpen ? (
+        {openChatId ? (
           <ChatPanel
+            key={openChatId}
             ref={chatPanelRef}
-            artifactId={shapeId}
+            chatId={openChatId}
+            documentId={shapeId}
             boardPersistenceKey={boardPersistenceKey}
+            title={openChat?.title ?? "New chat"}
             doc={{
               markdown: shape?.props.markdown ?? "",
               sources: sourceSnapshots,
             }}
             editor={liveEditor}
-            onClose={() => setIsChatOpen(false)}
+            onClose={() => setOpenChatId(null)}
+            onBack={() => {
+              setOpenChatId(null);
+              setChatsListOpen(true);
+            }}
+            onNewChat={openDraftChat}
+          />
+        ) : null}
+
+        {/* Unobtrusive bottom affordance over the document column: a small
+            chat launcher (when no chat is open) plus an "Add to chat" button
+            whenever text is selected. */}
+        {!isStreaming ? (
+          <DocChatBottomBar
+            editor={liveEditor}
+            chatOpen={!!openChatId}
+            rightInset={openChatId ? 400 : 0}
+            disabled={!hasApiKey}
+            onLaunch={handleLaunchChat}
+            onAddToChat={handleAddToChat}
           />
         ) : null}
       </div>
@@ -410,8 +486,10 @@ function Header({
   markdown,
   sourceUrl,
   onClose,
-  isChatOpen,
-  onToggleChat,
+  chatsListOpen,
+  onToggleChatsList,
+  chatCount,
+  chatsMenuSlot,
   openCommentCount,
 }: {
   title: string;
@@ -419,8 +497,10 @@ function Header({
   markdown: string;
   sourceUrl: string;
   onClose: () => void;
-  isChatOpen: boolean;
-  onToggleChat: () => void;
+  chatsListOpen: boolean;
+  onToggleChatsList: () => void;
+  chatCount: number;
+  chatsMenuSlot: React.ReactNode;
   openCommentCount: number;
 }) {
   return (
@@ -464,21 +544,27 @@ function Header({
             <span>{openCommentCount}</span>
           </button>
         ) : null}
-        <button
-          type="button"
-          title={isChatOpen ? "Close chat" : "Open chat"}
-          aria-label={isChatOpen ? "Close chat" : "Open chat"}
-          aria-pressed={isChatOpen}
-          onClick={onToggleChat}
-          className={
-            "grid h-7 w-7 place-items-center rounded-button transition-colors duration-100 " +
-            (isChatOpen
-              ? "bg-surface-hover text-text-primary"
-              : "text-text-secondary hover:bg-surface-hover hover:text-text-primary")
-          }
-        >
-          <MessageSquare className="h-4 w-4" aria-hidden />
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            title={chatCount > 0 ? `${chatCount} chat${chatCount === 1 ? "" : "s"}` : "Chats"}
+            aria-label={chatCount > 0 ? `${chatCount} chats` : "Chats"}
+            aria-pressed={chatsListOpen}
+            onClick={onToggleChatsList}
+            className={
+              "flex h-7 items-center gap-1 rounded-button px-2 transition-colors duration-100 " +
+              (chatsListOpen
+                ? "bg-surface-hover text-text-primary"
+                : "text-text-secondary hover:bg-surface-hover hover:text-text-primary")
+            }
+          >
+            <MessageSquare className="h-4 w-4" aria-hidden />
+            {chatCount > 0 ? (
+              <span className="text-[12px] font-medium tabular-nums">{chatCount}</span>
+            ) : null}
+          </button>
+          {chatsMenuSlot}
+        </div>
         <button
           type="button"
           title="Close (Esc)"
@@ -847,24 +933,10 @@ function PrintTarget({
   title: string;
   markdown: string;
 }) {
-  const components = useMemo(
-    () => ({
-      a: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
-        <a {...props} target="_blank" rel="noreferrer" />
-      ),
-    }),
-    [],
-  );
   return (
     <div className="canvas-ai-print-target" aria-hidden>
       {title.trim().length > 0 ? <h1>{title}</h1> : null}
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={components}
-        urlTransform={markdownUrlTransform}
-      >
-        {markdown}
-      </ReactMarkdown>
+      <MarkdownView>{markdown}</MarkdownView>
     </div>
   );
 }

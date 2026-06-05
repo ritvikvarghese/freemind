@@ -77,6 +77,7 @@ export function ChatsMenu() {
       className="pointer-events-auto fixed top-4 z-40"
       style={{ right, transition: "right 140ms var(--ease-out-fast)" }}
       onPointerDown={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
       <button

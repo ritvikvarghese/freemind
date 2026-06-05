@@ -17,9 +17,7 @@ import {
   Globe,
   RefreshCw,
 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { markdownUrlTransform } from "@/lib/markdown/urlTransform";
+import { MarkdownView } from "@/components/MarkdownView";
 import { useMemo } from "react";
 import { useEditor, useValue, type TLShapeId } from "tldraw";
 import { abortRun } from "@/lib/agent/abortRegistry";
@@ -336,12 +334,7 @@ function DocumentNodeBody({ shape }: { shape: DocumentNodeShape }) {
           <>
             <div className="h-full overflow-hidden text-[13px] leading-relaxed text-text-primary canvas-ai-doc-preview">
               {markdown ? (
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  urlTransform={markdownUrlTransform}
-                >
-                  {markdown}
-                </ReactMarkdown>
+                <MarkdownView>{markdown}</MarkdownView>
               ) : isInProgress ? (
                 <span className="inline-flex items-center gap-2 text-text-tertiary">
                   <Loader2 className="h-3 w-3 animate-spin" />

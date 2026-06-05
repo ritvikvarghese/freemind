@@ -1,6 +1,7 @@
 import type { TLShape, TLTextShape, TLNoteShape, TLBookmarkShape } from "tldraw";
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources/messages";
 import { isVisionPdf } from "@/lib/extract/pdf";
+import { escapeXml, truncate } from "@/lib/string-utils";
 import type { TextNodeShape } from "@/components/canvas/shapes/TextNode";
 import type { UploadNodeShape } from "@/components/canvas/shapes/UploadNode";
 import type { ImageNodeShape } from "@/components/canvas/shapes/ImageNode";
@@ -10,6 +11,8 @@ import type {
   SourceSnapshot,
   SourceImagePayload,
 } from "@/components/canvas/shapes/DocumentNode";
+import type { NotesNodeShape } from "@/components/canvas/shapes/NotesNode";
+import { notesToText } from "@/lib/notes/format";
 
 export type SourceShape =
   | TextNodeShape
@@ -17,6 +20,7 @@ export type SourceShape =
   | ImageNodeShape
   | LinkNodeShape
   | DocumentNodeShape
+  | NotesNodeShape
   | TLTextShape
   | TLNoteShape
   | TLBookmarkShape;
@@ -27,6 +31,7 @@ export function sourceText(shape: SourceShape): string {
   if (shape.type === "canvas-ai-document") return shape.props.markdown;
   if (shape.type === "canvas-ai-image") return shape.props.ocrText;
   if (shape.type === "canvas-ai-link") return linkText(shape);
+  if (shape.type === "canvas-ai-notes") return notesToText(shape.props.notes);
   if (shape.type === "text" || shape.type === "note")
     return richTextToPlain(shape.props.richText);
   // Pasted-link bookmark: the URL is the context (research mode can web_search it).
@@ -102,8 +107,6 @@ export type BuiltContext = {
   sources: { id: string; sourceId: string; title: string; text: string }[];
 };
 
-const escapeXml = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 export function buildContext(
   selected: SourceShape[],
@@ -168,6 +171,14 @@ export function buildContext(
         text: shape.props.url,
       };
     }
+    if (shape.type === "canvas-ai-notes") {
+      return {
+        id,
+        sourceId,
+        title: shape.props.title || "notes",
+        text: notesToText(shape.props.notes),
+      };
+    }
     // upload
     return {
       id,
@@ -181,8 +192,23 @@ export function buildContext(
   // OCR transcription, tagged so the model can pair it with the picture below).
   const ctxXml = sources
     .map((s, i) => {
-      const kind = selected[i].type === "canvas-ai-image" ? " kind=\"image\"" : "";
-      return `  <source id="${s.id}" title="${escapeXml(s.title)}"${kind}>\n${escapeXml(s.text)}\n  </source>`;
+      const shape = selected[i];
+      const isImage = shape.type === "canvas-ai-image";
+      const isScannedPdf =
+        shape.type === "canvas-ai-upload" && isVisionPdf(shape.props);
+      const kind = isImage ? " kind=\"image\"" : "";
+      // Images and scanned PDFs are attached as vision blocks below. When they
+      // carry no extracted text (image OCR is opt-in), point the model at the
+      // attached picture instead of emitting an empty, broken-looking source.
+      let body = s.text;
+      if (!body.trim()) {
+        if (isImage) {
+          body = `(This source is an image attached below as ${s.id}. Read the attached picture directly.)`;
+        } else if (isScannedPdf) {
+          body = `(This source is a scanned PDF attached below as ${s.id}. Read the attached pages directly.)`;
+        }
+      }
+      return `  <source id="${s.id}" title="${escapeXml(s.title)}"${kind}>\n${escapeXml(body)}\n  </source>`;
     })
     .join("\n");
 
@@ -228,6 +254,7 @@ export function isSourceShape(shape: TLShape): shape is SourceShape {
     shape.type === "canvas-ai-upload" ||
     shape.type === "canvas-ai-image" ||
     shape.type === "canvas-ai-link" ||
+    shape.type === "canvas-ai-notes" ||
     shape.type === "text" ||
     shape.type === "note" ||
     shape.type === "bookmark"
@@ -242,9 +269,6 @@ export function isSourceShape(shape: TLShape): shape is SourceShape {
   return false;
 }
 
-function truncate(s: string, n: number): string {
-  return s.length <= n ? s : s.slice(0, n - 1) + "…";
-}
 
 /**
  * Capture a full-text snapshot of a source shape for persistence onto the
@@ -325,6 +349,15 @@ export function snapshotSource(
       kind: "text",
       title: bookmarkTitle(shape.props.url),
       text: shape.props.url,
+      capturedAt,
+    };
+  }
+  if (shape.type === "canvas-ai-notes") {
+    return {
+      id: shape.id,
+      kind: "text",
+      title: shape.props.title || "Notes",
+      text: notesToText(shape.props.notes),
       capturedAt,
     };
   }

@@ -2,7 +2,7 @@
 
 import { useEditor, useValue, type TLShape } from "tldraw";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, CornerDownLeft, Loader2, Plus } from "lucide-react";
+import { ChevronDown, CornerDownLeft, Info, Loader2, Plus } from "lucide-react";
 import { useActiveRun } from "@/lib/agent/abortRegistry";
 import { useApiKey } from "@/lib/storage/apiKey";
 import { useBoardKey } from "@/components/canvas/BoardContext";
@@ -33,11 +33,29 @@ type PromptSelection = AgentMode | "create-artifact";
 
 const SELECTION_STORAGE_KEY = "canvas-ai:agent-mode";
 
-const OPTIONS: { id: PromptSelection; label: string }[] = [
-  { id: "freeform", label: "Freeform" },
-  { id: "deepsynth", label: "Deepsynth" },
-  { id: "deepsearch", label: "Deepsearch" },
-  { id: "create-artifact", label: "Create artifact" },
+const OPTIONS: { id: PromptSelection; label: string; description: string }[] = [
+  {
+    id: "freeform",
+    label: "Freeform",
+    description: "Does exactly what you ask, in the format you ask for.",
+  },
+  {
+    id: "deepsynth",
+    label: "Deepsynth",
+    description:
+      "Reasons across only your selected sources and gives one clear pick. No web.",
+  },
+  {
+    id: "deepsearch",
+    label: "Deepsearch",
+    description: "Searches the web and writes a long, cited research document.",
+  },
+  {
+    id: "create-artifact",
+    label: "Create artifact",
+    description:
+      "Turns your sources into a document on the canvas, with no back and forth.",
+  },
 ];
 
 // Depth used when "Create artifact" is chosen at the prompt (no chat). Freeform
@@ -236,6 +254,7 @@ export function FloatingPrompt() {
             : { right: DOCK_WIDTH + RIGHT_OFFSET * 2, bottom: BOTTOM_OFFSET }
         }
         onPointerDown={(e) => e.stopPropagation()}
+        onContextMenu={(e) => e.stopPropagation()}
         onWheel={(e) => e.stopPropagation()}
       >
         {pill}
@@ -277,6 +296,7 @@ export function FloatingPrompt() {
         transition: "right 140ms var(--ease-out-fast)",
       }}
       onPointerDown={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
       <div
@@ -292,9 +312,11 @@ export function FloatingPrompt() {
           onChange={(e) => setPrompt(e.currentTarget.value)}
           onKeyDown={(e) => {
             e.stopPropagation();
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canSubmit) {
+            // Enter submits; Shift+Enter inserts a newline (standard chat UX).
+            // Cmd/Ctrl+Enter still submits too.
+            if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              handleSubmit();
+              if (canSubmit) handleSubmit();
             }
           }}
           onKeyUp={(e) => e.stopPropagation()}
@@ -314,22 +336,36 @@ export function FloatingPrompt() {
             <div className="relative" ref={menuRef}>
               {menuOpen ? (
                 <div className="absolute bottom-9 left-0 w-[184px] rounded-panel border border-hairline bg-elevated p-1 shadow-[var(--shadow-floating)]">
-                  {OPTIONS.map((o, i) => (
+                  {OPTIONS.map((o) => (
                     <div key={o.id}>
-                      {i === 3 ? (
-                        <div className="my-1 border-t border-hairline" />
-                      ) : null}
                       <button
                         type="button"
                         onClick={() => setSelection(o.id)}
                         className={
-                          "block w-full rounded-button px-2.5 py-1.5 text-left text-[12px] " +
+                          "flex w-full items-center gap-2 rounded-button px-2.5 py-1.5 text-left text-[12px] " +
                           (selection === o.id
                             ? "bg-accent text-on-accent"
                             : "text-text-secondary hover:bg-surface-hover hover:text-text-primary")
                         }
                       >
-                        {o.label}
+                        <span className="flex-1">{o.label}</span>
+                        <span
+                          className="group/info relative flex items-center"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Info
+                            className={
+                              "h-3 w-3 shrink-0 " +
+                              (selection === o.id
+                                ? "text-on-accent/70"
+                                : "text-text-tertiary")
+                            }
+                            aria-hidden
+                          />
+                          <span className="pointer-events-none absolute left-full top-1/2 z-[80] ml-2 hidden w-[214px] -translate-y-1/2 rounded-button border border-hairline bg-elevated px-2.5 py-1.5 text-[11px] leading-snug text-text-secondary shadow-[var(--shadow-floating)] group-hover/info:block">
+                            {o.description}
+                          </span>
+                        </span>
                       </button>
                     </div>
                   ))}
@@ -373,8 +409,7 @@ export function FloatingPrompt() {
               <Loader2 className="h-3 w-3 animate-spin" />
             ) : null}
             {isArtifact ? "Create" : "Chat"}
-            <span className="text-on-accent/60 flex items-center gap-0.5 ml-0.5">
-              <span className="text-[10px]">⌘</span>
+            <span className="text-on-accent/60 flex items-center ml-0.5">
               <CornerDownLeft className="h-2.5 w-2.5" />
             </span>
           </button>
@@ -402,6 +437,7 @@ function useTokenEstimate(sources: SourceShape[], userPrompt: string): number {
       return acc;
     }
     if (s.type === "canvas-ai-link") return acc + sourceText(s).length;
+    if (s.type === "canvas-ai-notes") return acc + sourceText(s).length;
     if (s.type === "text" || s.type === "note") return acc + sourceText(s).length;
     if (s.type === "bookmark") return acc + s.props.url.length;
     return acc + s.props.fullText.length;

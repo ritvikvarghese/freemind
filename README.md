@@ -8,16 +8,20 @@ It runs on your own machine. There are no accounts and nothing in the cloud. You
 
 ```bash
 pnpm install
-pnpm dev
+pnpm use
 ```
 
-Open http://localhost:3000. You'll need Node 20 or newer and pnpm 10. The postinstall step copies the pdf.js worker into `public/`.
+Open http://localhost:3000. On first run, click the **"Add your API key"** button in the top right and paste your Anthropic key (details just below). That is the only setup; everything else is ready to go.
+
+`pnpm use` builds the app and serves it, which is the normal way to run it. For development with hot reload, use `pnpm dev` instead. You need Node 20 or newer and pnpm 10; the postinstall step copies the pdf.js worker into `public/`.
 
 ## Your API key
 
 Freemind talks to the Anthropic API straight from the browser, so you bring your own key. Get one at [console.anthropic.com](https://console.anthropic.com/settings/keys).
 
-You can paste it into the settings panel (the gear icon, top right), which checks it with a single `models.list` call and saves it to your browser's localStorage. Or you can put it in a file: copy `.env.local.example` to `.env.local` and set `NEXT_PUBLIC_ANTHROPIC_API_KEY`. If you do both, the key you saved in the app wins.
+The simplest way: when you open the app with no key set, an **"Add your API key"** button sits next to the gear in the top right. Click it (or the gear), paste your key, and it is checked with a single `models.list` call and saved to your browser's localStorage. That is it; the button goes away once the key is set.
+
+If you would rather use a file, copy `.env.local.example` to `.env.local` and set `NEXT_PUBLIC_ANTHROPIC_API_KEY`. If you do both, the key you saved in the app wins.
 
 One thing to be clear about: the key runs in the browser. Every request goes from your tab to Anthropic over HTTPS, which is fine on a machine that's only yours. Don't run this on a shared computer, don't screen-share with the network tab open, and don't host it anywhere public without putting a backend in front to hold the key. If a key ever leaks, rotate it in the Anthropic console.
 
@@ -30,7 +34,7 @@ Drop things on the canvas to use as sources:
 - Images, which get OCR'd and also passed to the model as pictures.
 - YouTube links, which get turned into transcripts.
 
-Select a few sources, pick a mode, write a prompt, and press Cmd+Enter. Freeform mode is quick and conversational (Sonnet by default). Deep research mode does the long, structured write-up and can search the web (Opus by default). The result streams into a new document next to whatever you selected, and you can stop it from the document's header if it goes off the rails.
+Select a few sources, pick a mode, write a prompt, and press Enter. Freeform mode is quick and conversational (Sonnet by default). Deep research mode does the long, structured write-up and can search the web (Opus by default). The result streams into a new document next to whatever you selected, and you can stop it from the document's header if it goes off the rails. You can also chat with the canvas or with any document, and ask it to write findings straight into the doc.
 
 A few other things that help you think on the canvas:
 
@@ -47,8 +51,10 @@ Everything is saved in the browser per board, so it survives a reload.
 These are optional and all go in `.env.local`:
 
 - `NEXT_PUBLIC_ANTHROPIC_API_KEY`: your key, if you'd rather not use the in-app panel.
-- `NEXT_PUBLIC_CLAUDE_MODEL`: model for Freeform mode. Defaults to `claude-sonnet-4-6`.
+- `NEXT_PUBLIC_CLAUDE_MODEL`: model for Freeform research. Defaults to `claude-sonnet-4-6`.
 - `NEXT_PUBLIC_CLAUDE_DEEP_MODEL`: model for Deep research mode. Defaults to `claude-opus-4-7`.
+- `NEXT_PUBLIC_CLAUDE_CHAT_MODEL`: model for canvas and document chat. Defaults to `claude-sonnet-4-6`.
+- `NEXT_PUBLIC_CLAUDE_OCR_MODEL`: model for reading text from images. Defaults to `claude-sonnet-4-6`.
 
 ## Things worth knowing
 

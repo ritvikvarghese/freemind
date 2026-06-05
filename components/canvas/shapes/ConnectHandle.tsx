@@ -9,6 +9,7 @@ const CONNECTABLE = new Set([
   "canvas-ai-upload",
   "canvas-ai-image",
   "canvas-ai-document",
+  "canvas-ai-notes",
   "text",
   "note",
 ]);

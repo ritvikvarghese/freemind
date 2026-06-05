@@ -2,11 +2,17 @@
 
 import {
   Tldraw,
+  createShapeId,
   defaultHandleExternalFileContent,
+  tipTapDefaultExtensions,
+  defaultAddFontsFromNode,
   type Editor,
   type TLComponents,
   type TLDefaultExternalContentHandlerOpts,
+  type TLShapePartial,
+  type TLTextOptions,
 } from "tldraw";
+import TextAlign from "@tiptap/extension-text-align";
 import { useCallback, useEffect } from "react";
 import { setCurrentBoardPersistenceKey } from "@/lib/storage/currentBoard";
 import { TextNodeUtil } from "./shapes/TextNode";
@@ -14,16 +20,21 @@ import { UploadNodeUtil } from "./shapes/UploadNode";
 import { ImageNodeUtil } from "./shapes/ImageNode";
 import { LinkNodeUtil } from "./shapes/LinkNode";
 import { DocumentNodeUtil } from "./shapes/DocumentNode";
+import { NotesNodeUtil } from "./shapes/NotesNode";
+import { ResizableNoteUtil } from "./shapes/ResizableNoteUtil";
 import { CanvasOverlay } from "./CanvasOverlay";
+import { ShapeContextMenu } from "./ShapeContextMenu";
+import { CanvasRichTextToolbar } from "./toolbar/CanvasRichTextToolbar";
 import { WorldOverlay } from "./overlay/WorldOverlay";
 import { CanvasBackground } from "./overlay/CanvasBackground";
 import { ToastProvider, ToastBridge, toast } from "./toast";
-import { BoardHeader } from "./BoardHeader";
 import { BoardProvider } from "./BoardContext";
 import { ingestFiles } from "./ingestFiles";
 import { ingestImages } from "./ingestImages";
 import { ingestLink } from "./ingestLink";
 import { useTheme } from "@/lib/storage/theme";
+import { takeShapeTransfers } from "@/lib/storage/shapeTransfers";
+import { restoreFocus } from "@/lib/focus/openFocus";
 
 const shapeUtils = [
   TextNodeUtil,
@@ -31,6 +42,9 @@ const shapeUtils = [
   ImageNodeUtil,
   LinkNodeUtil,
   DocumentNodeUtil,
+  NotesNodeUtil,
+  // Replaces the default `note` util so sticky notes can be resized (scaled).
+  ResizableNoteUtil,
 ];
 
 // Hide every default tldraw UI surface; we render our own minimal toolbar.
@@ -53,6 +67,24 @@ const components: TLComponents = {
   InFrontOfTheCanvas: CanvasOverlay,
   OnTheCanvas: WorldOverlay,
   Background: CanvasBackground,
+  // Custom right-click menu for Freemind nodes (default menu for everything else).
+  ContextMenu: ShapeContextMenu,
+  // Our button row inside tldraw's contextual toolbar (safe positioning), so
+  // canvas text shapes get the same formatting as focus mode.
+  RichTextToolbar: CanvasRichTextToolbar,
+};
+
+// Add paragraph/heading alignment to tldraw's text editor (its defaults cover
+// bold/italic/underline/strike/code/highlight/headings/lists/link but not
+// alignment), so the toolbar's align buttons work on canvas text too.
+const textOptions: TLTextOptions = {
+  tipTapConfig: {
+    extensions: [
+      ...tipTapDefaultExtensions,
+      TextAlign.configure({ types: ["heading", "paragraph"] }),
+    ],
+  },
+  addFontsFromNode: defaultAddFontsFromNode,
 };
 
 // Inter is loaded by Next.js (app/layout.tsx) and exposed as --font-inter.
@@ -82,10 +114,8 @@ const DEFAULT_FILE_OPTS: TLDefaultExternalContentHandlerOpts = {
 
 export function CanvasRoot({
   persistenceKey,
-  boardTitle,
 }: {
   persistenceKey: string;
-  boardTitle?: string;
 }) {
   const theme = useTheme();
   useEffect(() => {
@@ -93,33 +123,6 @@ export function CanvasRoot({
     return () => setCurrentBoardPersistenceKey(null);
   }, [persistenceKey]);
   const onMount = useCallback((editor: Editor) => {
-    // TEMP DIAGNOSTIC — locating the stray text box on board open/reload.
-    const dump = (label: string) =>
-      console.log(
-        `[board ${label}] tool=${editor.getCurrentToolId()} shapes=`,
-        editor.getCurrentPageShapes().map((s) => {
-          const props = s.props as Record<string, unknown>;
-          return { type: s.type, id: s.id, x: Math.round(s.x), y: Math.round(s.y), text: props?.text };
-        }),
-      );
-    dump("at-mount");
-    const unsub = editor.store.listen(
-      (entry) => {
-        for (const raw of Object.values(entry.changes.added)) {
-          const rec = raw as unknown as Record<string, unknown>;
-          if (rec.typeName === "shape") {
-            const props = rec.props as Record<string, unknown> | undefined;
-            console.log("[board shape-added]", rec.type, rec.id, { x: rec.x, y: rec.y, text: props?.text });
-          }
-        }
-      },
-      { source: "all", scope: "document" },
-    );
-    setTimeout(() => {
-      dump("after-3s");
-      unsub();
-    }, 3000);
-
     const base = editor.getTheme("default");
     if (base) {
       editor.updateTheme({
@@ -132,6 +135,31 @@ export function CanvasRoot({
       });
     }
 
+    // Sticky notes in dark mode use tldraw's desaturated dark fills, which read
+    // as muddy on our dark canvas. Borrow the vibrant LIGHT-mode note fills (and
+    // their black ink) so notes pop while staying legible — these are values
+    // tldraw already ships and vets for the light theme. Only noteFill/noteText
+    // change, so nothing else about dark mode is affected.
+    editor.updateThemes((themes) => {
+      const colors = themes.default?.colors as unknown as
+        | {
+            light: Record<string, unknown>;
+            dark: Record<string, unknown>;
+          }
+        | undefined;
+      if (colors) {
+        for (const name of Object.keys(colors.dark)) {
+          const light = colors.light[name];
+          const dark = colors.dark[name];
+          // Skip scalar theme fields (e.g. `text`); only recolor note entries.
+          if (!isNoteColor(light) || !isNoteColor(dark)) continue;
+          dark.noteFill = light.noteFill;
+          dark.noteText = light.noteText;
+        }
+      }
+      return themes;
+    });
+
     editor.registerExternalContentHandler("files", async ({ files, point }) => {
       const docs: File[] = [];
       const images: File[] = [];
@@ -141,6 +169,9 @@ export function CanvasRoot({
         const isDoc =
           f.type === "application/pdf" ||
           name.endsWith(".pdf") ||
+          f.type ===
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+          name.endsWith(".docx") ||
           f.type === "text/markdown" ||
           f.type === "text/plain" ||
           name.endsWith(".md") ||
@@ -169,7 +200,98 @@ export function CanvasRoot({
     editor.registerExternalContentHandler("url", async ({ url, point }) => {
       await ingestLink(editor, url, point);
     });
-  }, []);
+
+    // Materialize any shapes "duplicated to" this canvas while it was closed.
+    // Lay them out in a tidy grid sized to the shapes (a fixed diagonal offset
+    // just piles big documents on top of each other).
+    const transfers = takeShapeTransfers(persistenceKey);
+    if (transfers.length) {
+      const ids = transfers.map(() => createShapeId());
+      editor.run(() => {
+        // Create first (off-screen-ish), then measure + place.
+        transfers.forEach((t, i) => {
+          editor.createShape({
+            id: ids[i],
+            type: t.type as TLShapePartial["type"],
+            x: 0,
+            y: 0,
+            props: t.props,
+          });
+        });
+        const sizes = ids.map((id) => {
+          const b = editor.getShapePageBounds(id);
+          return { w: b?.width ?? 320, h: b?.height ?? 220 };
+        });
+        const GAP = 56;
+        const cols = Math.ceil(Math.sqrt(ids.length));
+        const colW = Math.max(...sizes.map((s) => s.w)) + GAP;
+        const rowH = Math.max(...sizes.map((s) => s.h)) + GAP;
+        const rows = Math.ceil(ids.length / cols);
+        const center = editor.getViewportPageBounds().center;
+        const startX = center.x - (cols * colW - GAP) / 2;
+        const startY = center.y - (rows * rowH - GAP) / 2;
+        ids.forEach((id, i) => {
+          const col = i % cols;
+          const row = Math.floor(i / cols);
+          editor.updateShape({
+            id,
+            type: transfers[i].type as TLShapePartial["type"],
+            x: startX + col * colW,
+            y: startY + row * rowH,
+          });
+        });
+      });
+    }
+
+    // Pasted text can arrive colored "white" (from the source's styling), which
+    // is invisible on the light canvas. Force any white text shape to tldraw's
+    // theme-aware "black" (dark on light, light on dark) so it's always legible.
+    // Future pastes: rewrite on create. Existing white text: sweep once the
+    // persisted store has loaded (can land just after onMount).
+    editor.sideEffects.registerBeforeCreateHandler("shape", (shape) => {
+      if (
+        shape.type === "text" &&
+        (shape.props as { color?: string }).color === "white"
+      ) {
+        return { ...shape, props: { ...shape.props, color: "black" } };
+      }
+      return shape;
+    });
+    const sweepWhiteText = () => {
+      const whites = editor
+        .getCurrentPageShapes()
+        .filter(
+          (s) =>
+            s.type === "text" &&
+            (s.props as { color?: string }).color === "white",
+        );
+      if (whites.length === 0) return;
+      editor.run(
+        () => {
+          editor.updateShapes(
+            whites.map((s) => ({
+              id: s.id,
+              type: "text" as const,
+              props: { color: "black" },
+            })),
+          );
+        },
+        { history: "ignore" },
+      );
+    };
+    sweepWhiteText();
+    setTimeout(sweepWhiteText, 600);
+
+    // Reopen the focus view the user was on before a reload. Persisted shapes
+    // can land just after onMount, so poll briefly until the shape exists.
+    let tries = 0;
+    const tryRestore = () => {
+      if (restoreFocus(editor) !== "retry") return;
+      if (tries++ > 20) return; // ~3s ceiling, then give up
+      setTimeout(tryRestore, 150);
+    };
+    tryRestore();
+  }, [persistenceKey]);
 
   return (
     <ToastProvider>
@@ -181,11 +303,27 @@ export function CanvasRoot({
             colorScheme={theme}
             shapeUtils={shapeUtils}
             components={components}
+            textOptions={textOptions}
+            // The FloatingToolbar owns empty-canvas clicks, so suppress
+            // tldraw's default "double-click creates a text shape" (a fast
+            // double click would otherwise drop a stray text box).
+            options={{ createTextOnCanvasDoubleClick: false }}
             onMount={onMount}
           />
         </BoardProvider>
       </div>
-      {boardTitle ? <BoardHeader title={boardTitle} /> : null}
     </ToastProvider>
+  );
+}
+
+/** A theme palette entry is a note color iff it carries noteFill/noteText. */
+function isNoteColor(
+  v: unknown,
+): v is { noteFill: string; noteText: string } {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    typeof (v as { noteFill?: unknown }).noteFill === "string" &&
+    typeof (v as { noteText?: unknown }).noteText === "string"
   );
 }

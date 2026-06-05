@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/core";
 import { BubbleMenuPlugin } from "@tiptap/extension-bubble-menu";
 import {
@@ -8,6 +9,7 @@ import {
   Italic,
   Underline as UnderlineIcon,
   Strikethrough,
+  Highlighter,
   Code,
   Link as LinkIcon,
   Heading1,
@@ -15,34 +17,35 @@ import {
   Heading3,
   List,
   ListOrdered,
-  Sparkles,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  MessagesSquare,
   MessageSquarePlus,
 } from "lucide-react";
 
-type Props = {
+type ContentProps = {
   editor: Editor;
-  /** Optional: clicking the "Generate" sparkle opens chat with the selection prefilled. */
+  /** Optional: clicking the "Add to chat" button opens chat with the selection. */
   onGenerate?: (selectionText: string) => void;
-  /** Optional: clicking the "Comment" button opens the comment composer for the selection. */
+  /** Optional: clicking the "Comment" button opens the comment composer. */
   onComment?: () => void;
+  /** Show the heading (paragraph/H1-H3) menu. Off for canvas text shapes,
+   *  where tldraw doesn't render headings. Defaults on (focus mode). */
+  showHeadings?: boolean;
 };
 
+type Props = ContentProps;
+
 /**
- * Selection toolbar. Built directly on `BubbleMenuPlugin` rather than the
- * `<BubbleMenu>` React wrapper so we keep full control over rendering and can
- * mount the same DOM element as a portal target if needed later.
+ * Selection toolbar for the focus-mode editor. Built directly on
+ * `BubbleMenuPlugin` so it positions itself at the selection. The button row is
+ * factored into `EditorToolbarContent` so it can be reused inside tldraw's own
+ * contextual toolbar for canvas text shapes (which provides its own positioning,
+ * avoiding the DOM-reparenting conflict the Tiptap plugin causes there).
  */
 export function BubbleToolbar({ editor, onGenerate, onComment }: Props) {
   const elRef = useRef<HTMLDivElement | null>(null);
-  const [linkOpen, setLinkOpen] = useState(false);
-  const [linkInput, setLinkInput] = useState("");
-  const linkInputRef = useRef<HTMLInputElement | null>(null);
-
-  const openLink = () => {
-    const existing = editor.getAttributes("link")?.href as string | undefined;
-    setLinkInput(existing ?? "");
-    setLinkOpen(true);
-  };
 
   useEffect(() => {
     const el = elRef.current;
@@ -78,9 +81,48 @@ export function BubbleToolbar({ editor, onGenerate, onComment }: Props) {
     });
     editor.registerPlugin(plugin);
     return () => {
-      editor.unregisterPlugin("canvas-ai-bubble-menu");
+      // On canvas, tldraw destroys its text editor when editing ends (which
+      // unmounts this toolbar); unregistering on a destroyed editor throws.
+      if (!editor.isDestroyed) editor.unregisterPlugin("canvas-ai-bubble-menu");
     };
   }, [editor]);
+
+  return (
+    <div
+      ref={elRef}
+      onPointerDown={(e) => e.stopPropagation()}
+      className="z-50 rounded-button border border-hairline bg-elevated p-1 shadow-floating"
+      style={{ boxShadow: "var(--shadow-floating)" }}
+    >
+      <EditorToolbarContent
+        editor={editor}
+        onGenerate={onGenerate}
+        onComment={onComment}
+      />
+    </div>
+  );
+}
+
+/**
+ * The toolbar's button row (no positioning). Used by the focus-mode
+ * BubbleToolbar and by the canvas text toolbar (inside tldraw's contextual
+ * toolbar container).
+ */
+export function EditorToolbarContent({
+  editor,
+  onGenerate,
+  onComment,
+  showHeadings = true,
+}: ContentProps) {
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkInput, setLinkInput] = useState("");
+  const linkInputRef = useRef<HTMLInputElement | null>(null);
+
+  const openLink = () => {
+    const existing = editor.getAttributes("link")?.href as string | undefined;
+    setLinkInput(existing ?? "");
+    setLinkOpen(true);
+  };
 
   useEffect(() => {
     if (linkOpen) {
@@ -89,17 +131,24 @@ export function BubbleToolbar({ editor, onGenerate, onComment }: Props) {
     }
   }, [linkOpen]);
 
+  // The link editor must only open when the user clicks the link button, not
+  // linger across selections. Reset it whenever the selection changes (a new
+  // selection re-shows the toolbar's buttons); clicking the link button keeps
+  // the selection, so it stays open then.
+  useEffect(() => {
+    const reset = () => setLinkOpen(false);
+    editor.on("selectionUpdate", reset);
+    return () => {
+      editor.off("selectionUpdate", reset);
+    };
+  }, [editor]);
+
   const applyLink = () => {
     const href = linkInput.trim();
     if (!href) {
       editor.chain().focus().extendMarkRange("link").unsetLink().run();
     } else {
-      editor
-        .chain()
-        .focus()
-        .extendMarkRange("link")
-        .setLink({ href })
-        .run();
+      editor.chain().focus().extendMarkRange("link").setLink({ href }).run();
     }
     setLinkOpen(false);
   };
@@ -121,14 +170,9 @@ export function BubbleToolbar({ editor, onGenerate, onComment }: Props) {
 
   return (
     <div
-      ref={elRef}
-      onPointerDown={(e) => e.stopPropagation()}
-      onMouseDown={(e) => {
-        // Prevent selection collapse when clicking toolbar buttons.
-        e.preventDefault();
-      }}
-      className="z-50 flex items-center gap-0.5 rounded-button border border-hairline bg-elevated p-1 shadow-floating"
-      style={{ boxShadow: "var(--shadow-floating)" }}
+      className="flex items-center gap-0.5"
+      // Prevent selection collapse when clicking toolbar buttons.
+      onMouseDown={(e) => e.preventDefault()}
     >
       {linkOpen ? (
         <div className="flex items-center gap-1 px-1">
@@ -154,11 +198,15 @@ export function BubbleToolbar({ editor, onGenerate, onComment }: Props) {
         </div>
       ) : (
         <>
-          <HeadingMenu
-            current={activeHeading()}
-            onSelect={(lvl) => setHeading(lvl)}
-          />
-          <Divider />
+          {showHeadings ? (
+            <>
+              <HeadingMenu
+                current={activeHeading()}
+                onSelect={(lvl) => setHeading(lvl)}
+              />
+              <Divider />
+            </>
+          ) : null}
           <BtnToggle
             label="Bold"
             active={editor.isActive("bold")}
@@ -188,11 +236,40 @@ export function BubbleToolbar({ editor, onGenerate, onComment }: Props) {
             <Strikethrough className="h-3.5 w-3.5" />
           </BtnToggle>
           <BtnToggle
+            label="Highlight"
+            active={editor.isActive("highlight")}
+            onClick={() => editor.chain().focus().toggleHighlight().run()}
+          >
+            <Highlighter className="h-3.5 w-3.5" />
+          </BtnToggle>
+          <BtnToggle
             label="Inline code"
             active={editor.isActive("code")}
             onClick={() => editor.chain().focus().toggleCode().run()}
           >
             <Code className="h-3.5 w-3.5" />
+          </BtnToggle>
+          <Divider />
+          <BtnToggle
+            label="Align left"
+            active={editor.isActive({ textAlign: "left" })}
+            onClick={() => editor.chain().focus().setTextAlign("left").run()}
+          >
+            <AlignLeft className="h-3.5 w-3.5" />
+          </BtnToggle>
+          <BtnToggle
+            label="Align center"
+            active={editor.isActive({ textAlign: "center" })}
+            onClick={() => editor.chain().focus().setTextAlign("center").run()}
+          >
+            <AlignCenter className="h-3.5 w-3.5" />
+          </BtnToggle>
+          <BtnToggle
+            label="Align right"
+            active={editor.isActive({ textAlign: "right" })}
+            onClick={() => editor.chain().focus().setTextAlign("right").run()}
+          >
+            <AlignRight className="h-3.5 w-3.5" />
           </BtnToggle>
           <Divider />
           <BtnToggle
@@ -210,11 +287,7 @@ export function BubbleToolbar({ editor, onGenerate, onComment }: Props) {
             <ListOrdered className="h-3.5 w-3.5" />
           </BtnToggle>
           <Divider />
-          <BtnToggle
-            label="Link"
-            active={editor.isActive("link")}
-            onClick={openLink}
-          >
+          <BtnToggle label="Link" active={editor.isActive("link")} onClick={openLink}>
             <LinkIcon className="h-3.5 w-3.5" />
           </BtnToggle>
           {onComment ? (
@@ -229,19 +302,15 @@ export function BubbleToolbar({ editor, onGenerate, onComment }: Props) {
             <>
               {onComment ? null : <Divider />}
               <BtnToggle
-                label="Generate with AI"
+                label="Add to chat"
                 active={false}
                 onClick={() => {
                   const { from, to } = editor.state.selection;
-                  const selectionText = editor.state.doc.textBetween(
-                    from,
-                    to,
-                    " ",
-                  );
+                  const selectionText = editor.state.doc.textBetween(from, to, " ");
                   onGenerate(selectionText);
                 }}
               >
-                <Sparkles className="h-3.5 w-3.5" />
+                <MessagesSquare className="h-3.5 w-3.5" />
               </BtnToggle>
             </>
           ) : null}
@@ -269,18 +338,21 @@ function BtnToggle({
   return (
     <button
       type="button"
-      title={label}
       aria-label={label}
       aria-pressed={active}
       onClick={onClick}
       className={
-        "grid h-6 w-6 place-items-center rounded-button transition-colors duration-100 " +
+        "group/tt relative grid h-6 w-6 place-items-center rounded-button transition-colors duration-100 " +
         (active
           ? "bg-surface-hover text-text-primary"
           : "text-text-secondary hover:bg-surface-hover hover:text-text-primary")
       }
     >
       {children}
+      {/* Instant hover label (replaces the slow native title tooltip). */}
+      <span className="pointer-events-none absolute left-1/2 top-full z-[80] mt-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded-button border border-hairline bg-elevated px-2 py-1 text-[11px] font-medium text-text-secondary shadow-floating group-hover/tt:block">
+        {label}
+      </span>
     </button>
   );
 }
@@ -293,38 +365,65 @@ function HeadingMenu({
   onSelect: (level: 0 | 1 | 2 | 3) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPos({ left: r.left, top: r.bottom + 4 });
+    }
+    setOpen((o) => !o);
+  };
+
+  const choose = (level: 0 | 1 | 2 | 3) => {
+    onSelect(level);
+    setOpen(false);
+  };
+
   const label =
     current === 1 ? "H1" : current === 2 ? "H2" : current === 3 ? "H3" : "Text";
 
   return (
-    <div ref={wrapRef} className="relative">
+    <>
       <button
+        ref={btnRef}
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
         className="flex h-6 items-center gap-1 rounded-button px-2 text-[11px] font-medium text-text-secondary hover:bg-surface-hover hover:text-text-primary"
       >
         {label}
       </button>
-      {open ? (
-        <div className="absolute left-0 top-full z-50 mt-1 min-w-[120px] rounded-button border border-hairline bg-elevated p-1 shadow-floating">
-          <MenuItem icon={null} onClick={() => { onSelect(0); setOpen(false); }}>Paragraph</MenuItem>
-          <MenuItem icon={<Heading1 className="h-3.5 w-3.5" />} onClick={() => { onSelect(1); setOpen(false); }}>Heading 1</MenuItem>
-          <MenuItem icon={<Heading2 className="h-3.5 w-3.5" />} onClick={() => { onSelect(2); setOpen(false); }}>Heading 2</MenuItem>
-          <MenuItem icon={<Heading3 className="h-3.5 w-3.5" />} onClick={() => { onSelect(3); setOpen(false); }}>Heading 3</MenuItem>
-        </div>
-      ) : null}
-    </div>
+      {/* Portaled + fixed so tldraw's contextual-toolbar container can't clip it. */}
+      {open && pos
+        ? createPortal(
+            <div
+              ref={menuRef}
+              onMouseDown={(e) => e.preventDefault()}
+              style={{ position: "fixed", left: pos.left, top: pos.top, zIndex: 80 }}
+              className="min-w-[120px] rounded-button border border-hairline bg-elevated p-1 shadow-floating"
+            >
+              <MenuItem icon={null} onClick={() => choose(0)}>Paragraph</MenuItem>
+              <MenuItem icon={<Heading1 className="h-3.5 w-3.5" />} onClick={() => choose(1)}>Heading 1</MenuItem>
+              <MenuItem icon={<Heading2 className="h-3.5 w-3.5" />} onClick={() => choose(2)}>Heading 2</MenuItem>
+              <MenuItem icon={<Heading3 className="h-3.5 w-3.5" />} onClick={() => choose(3)}>Heading 3</MenuItem>
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   );
 }
 

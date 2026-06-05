@@ -51,6 +51,11 @@ export type ChatMessage = {
    *  Drives the inline attachment cards and that turn's <focus>. Canvas chat
    *  only; optional + additive (no migration; artifact chats never set it). */
   attachmentIds?: string[];
+  /** When this user message is a reply to selected/quoted text: the quoted
+   *  text, rendered as a styled block above the bubble (Claude-style) instead
+   *  of inline "> " markdown. The model still receives the quote via the wire
+   *  message's <quote>/<selection> block. Optional + additive (no migration). */
+  quote?: string;
   createdAt: number;
   error?: string;
 };

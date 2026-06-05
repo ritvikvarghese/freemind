@@ -1,7 +1,6 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import type { TLShapeId } from "tldraw";
 import type { Proposal, ProposalId } from "@/lib/storage/chatTypes";
 
 /**
@@ -10,25 +9,25 @@ import type { Proposal, ProposalId } from "@/lib/storage/chatTypes";
  * pending proposals; the user re-prompts if needed.
  */
 
-type State = Map<TLShapeId, Map<ProposalId, Proposal>>;
+type State = Map<string, Map<ProposalId, Proposal>>;
 
 const state: State = new Map();
-const listeners = new Map<TLShapeId, Set<() => void>>();
+const listeners = new Map<string, Set<() => void>>();
 
 // Cached snapshot arrays per artifact. useSyncExternalStore requires
 // getSnapshot to return the SAME reference between renders until the data
 // actually changes — otherwise React re-renders without end. We rebuild a
 // bucket's array only when it's mutated (invalidate clears the cache entry).
-const snapshotCache = new Map<TLShapeId, Proposal[]>();
+const snapshotCache = new Map<string, Proposal[]>();
 
-function notify(artifactId: TLShapeId) {
+function notify(artifactId: string) {
   snapshotCache.delete(artifactId);
   const set = listeners.get(artifactId);
   if (!set) return;
   for (const cb of set) cb();
 }
 
-function bucket(artifactId: TLShapeId): Map<ProposalId, Proposal> {
+function bucket(artifactId: string): Map<ProposalId, Proposal> {
   let b = state.get(artifactId);
   if (!b) {
     b = new Map();
@@ -37,13 +36,13 @@ function bucket(artifactId: TLShapeId): Map<ProposalId, Proposal> {
   return b;
 }
 
-export function addProposal(artifactId: TLShapeId, proposal: Proposal): void {
+export function addProposal(artifactId: string, proposal: Proposal): void {
   bucket(artifactId).set(proposal.id, proposal);
   notify(artifactId);
 }
 
 export function updateProposal(
-  artifactId: TLShapeId,
+  artifactId: string,
   id: ProposalId,
   patch: Partial<Proposal>,
 ): void {
@@ -57,19 +56,19 @@ export function updateProposal(
 }
 
 export function removeProposal(
-  artifactId: TLShapeId,
+  artifactId: string,
   id: ProposalId,
 ): void {
   bucket(artifactId).delete(id);
   notify(artifactId);
 }
 
-export function clearProposals(artifactId: TLShapeId): void {
+export function clearProposals(artifactId: string): void {
   state.delete(artifactId);
   notify(artifactId);
 }
 
-export function getProposals(artifactId: TLShapeId): Proposal[] {
+export function getProposals(artifactId: string): Proposal[] {
   const cached = snapshotCache.get(artifactId);
   if (cached) return cached;
   const b = state.get(artifactId);
@@ -81,7 +80,7 @@ export function getProposals(artifactId: TLShapeId): Proposal[] {
 const EMPTY: Proposal[] = [];
 
 export function subscribeProposals(
-  artifactId: TLShapeId,
+  artifactId: string,
   cb: () => void,
 ): () => void {
   let set = listeners.get(artifactId);
@@ -96,7 +95,7 @@ export function subscribeProposals(
   };
 }
 
-export function useProposals(artifactId: TLShapeId): Proposal[] {
+export function useProposals(artifactId: string): Proposal[] {
   return useSyncExternalStore(
     (cb) => subscribeProposals(artifactId, cb),
     () => getProposals(artifactId),

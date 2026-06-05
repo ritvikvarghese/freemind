@@ -20,10 +20,10 @@ export const metadata: Metadata = {
   description: "A canvas for the mind.",
 };
 
-// Runs in <head> before React hydrates — prevents a dark→light flash when
-// the user has picked the light theme. Keep it minimal: localStorage read +
-// data-theme set. Default (no localStorage value) is dark.
-const themeBootstrap = `try{var t=localStorage.getItem('canvas-ai:theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}`;
+// Runs in <head> before React hydrates — prevents a theme flash on first paint.
+// Keep it minimal: localStorage read + data-theme set. New users (no stored
+// value) default to light; an explicit dark choice persists and wins.
+const themeBootstrap = `try{var t=localStorage.getItem('canvas-ai:theme');document.documentElement.setAttribute('data-theme',(t==='light'||t==='dark')?t:'light');}catch(e){document.documentElement.setAttribute('data-theme','light');}`;
 
 export default function RootLayout({
   children,

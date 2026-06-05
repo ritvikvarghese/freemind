@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { markdownUrlTransform } from "@/lib/markdown/urlTransform";
+import { MarkdownView } from "@/components/MarkdownView";
+import { installChatCopyGuard } from "@/lib/clipboard/chatCopyGuard";
 import type { ChatMessage, Proposal } from "@/lib/storage/chatTypes";
 import type { SourceSnapshot } from "@/components/canvas/shapes/DocumentNode";
 import { SourceCard } from "@/components/canvas/chat/SourceCard";
@@ -24,6 +23,9 @@ type Props = {
   liveStatus: Map<string, Proposal["status"]>;
   onAccept: (proposal: Proposal) => void;
   onReject: (proposal: Proposal) => void;
+  /** Re-ask the AI to make a stale proposal's edit against the current doc.
+   *  Omitted by the canvas chat (no proposals there). */
+  onRedo?: (proposal: Proposal) => void;
   /** Canvas chat only: resolve a message's attachmentIds to source snapshots so
    *  their cards render inline above the bubble. Omitted by the artifact chat. */
   resolveAttachments?: (message: ChatMessage) => SourceSnapshot[];
@@ -36,10 +38,15 @@ export function ChatThread({
   liveStatus,
   onAccept,
   onReject,
+  onRedo,
   resolveAttachments,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottom = useRef(true);
+
+  // Stop tldraw from hijacking Cmd+C over selected chat text (it would copy
+  // serialized shape JSON because the document shape stays selected).
+  useEffect(() => installChatCopyGuard(), []);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -83,6 +90,7 @@ export function ChatThread({
             liveStatus={liveStatus}
             onAccept={onAccept}
             onReject={onReject}
+            onRedo={onRedo}
             attachments={resolveAttachments?.(m) ?? []}
           />
         ))}
@@ -91,12 +99,7 @@ export function ChatThread({
           <div className="space-y-2">
             {streamingAssistantText ? (
               <div className="canvas-ai-prose canvas-ai-chat-prose text-[13px]">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  urlTransform={markdownUrlTransform}
-                >
-                  {streamingAssistantText}
-                </ReactMarkdown>
+                <MarkdownView>{streamingAssistantText}</MarkdownView>
               </div>
             ) : null}
             {streamingToolUses.map((tu) => (
@@ -118,12 +121,14 @@ function MessageBlock({
   liveStatus,
   onAccept,
   onReject,
+  onRedo,
   attachments,
 }: {
   message: ChatMessage;
   liveStatus: Map<string, Proposal["status"]>;
   onAccept: (p: Proposal) => void;
   onReject: (p: Proposal) => void;
+  onRedo?: (p: Proposal) => void;
   attachments: SourceSnapshot[];
 }) {
   if (message.role === "user") {
@@ -136,9 +141,19 @@ function MessageBlock({
             ))}
           </div>
         ) : null}
-        <div className="rounded-button bg-surface-hover px-3 py-2 text-[13px] text-text-primary whitespace-pre-wrap">
-          {message.text}
-        </div>
+        {message.quote ? (
+          <div className="flex items-stretch gap-2 rounded-button border border-hairline bg-elevated px-2.5 py-1.5">
+            <div className="w-[2px] shrink-0 rounded-sm bg-text-tertiary/50" aria-hidden />
+            <div className="line-clamp-4 min-w-0 flex-1 whitespace-pre-wrap text-[12px] leading-snug text-text-secondary">
+              {message.quote}
+            </div>
+          </div>
+        ) : null}
+        {message.text ? (
+          <div className="rounded-button bg-surface-hover px-3 py-2 text-[13px] text-text-primary whitespace-pre-wrap">
+            {message.text}
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -146,12 +161,7 @@ function MessageBlock({
     <div className="space-y-2">
       {message.text ? (
         <div className="canvas-ai-prose canvas-ai-chat-prose text-[13px]">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            urlTransform={markdownUrlTransform}
-          >
-            {message.text}
-          </ReactMarkdown>
+          <MarkdownView>{message.text}</MarkdownView>
         </div>
       ) : null}
       {message.proposals?.map((p) => {
@@ -163,6 +173,7 @@ function MessageBlock({
             proposal={proposal}
             onAccept={() => onAccept(proposal)}
             onReject={() => onReject(proposal)}
+            onRedo={onRedo ? () => onRedo(proposal) : undefined}
           />
         );
       })}

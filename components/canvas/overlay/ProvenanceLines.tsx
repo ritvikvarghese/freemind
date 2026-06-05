@@ -1,7 +1,7 @@
 "use client";
 
-import { useEditor, useValue, type TLShapeId } from "tldraw";
-import type { DocumentNodeShape } from "../shapes/DocumentNode";
+import { useEditor, useValue } from "tldraw";
+import { getProvenanceEdges } from "@/lib/canvas/provenance";
 
 /**
  * Lives under tldraw's `Background` slot (below shapes). The Background slot
@@ -26,27 +26,21 @@ export function ProvenanceLines() {
         dx: number;
         dy: number;
       }[] = [];
-      for (const shape of editor.getCurrentPageShapes()) {
-        if (shape.type !== "canvas-ai-document") continue;
-        if (!selectedIds.has(shape.id)) continue;
-        const doc = shape as DocumentNodeShape;
-        const docBounds = editor.getShapePageBounds(doc.id);
-        if (!docBounds) continue;
-        const dcx = docBounds.x + docBounds.w / 2;
-        const dcy = docBounds.y + docBounds.h / 2;
-        for (const sourceId of doc.props.sourceIds) {
-          const srcBounds = editor.getShapePageBounds(sourceId as TLShapeId);
-          if (!srcBounds) continue;
-          const scx = srcBounds.x + srcBounds.w / 2;
-          const scy = srcBounds.y + srcBounds.h / 2;
-          out.push({
-            key: `${doc.id}->${sourceId}`,
-            sx: scx,
-            sy: scy,
-            dx: dcx,
-            dy: dcy,
-          });
-        }
+      // Edges are undirected for highlighting: draw any provenance link where
+      // EITHER end is selected, so selecting a source reveals the docs/notes
+      // built from it just as selecting a doc reveals its sources.
+      for (const e of getProvenanceEdges(editor)) {
+        if (!selectedIds.has(e.from) && !selectedIds.has(e.to)) continue;
+        const docBounds = editor.getShapePageBounds(e.from);
+        const srcBounds = editor.getShapePageBounds(e.to);
+        if (!docBounds || !srcBounds) continue;
+        out.push({
+          key: `${e.from}->${e.to}`,
+          sx: srcBounds.x + srcBounds.w / 2,
+          sy: srcBounds.y + srcBounds.h / 2,
+          dx: docBounds.x + docBounds.w / 2,
+          dy: docBounds.y + docBounds.h / 2,
+        });
       }
       return out;
     },

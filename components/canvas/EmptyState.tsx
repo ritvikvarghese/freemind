@@ -8,6 +8,7 @@ const OUR_TYPES = new Set([
   "canvas-ai-image",
   "canvas-ai-document",
   "canvas-ai-link", // pasted-link card
+  "canvas-ai-notes", // linked reader-notes node
   "text", // tldraw native text shape (T toolbar button)
   "note", // tldraw native sticky note (toolbar button)
   "image", // tldraw native image shape (legacy / paste fallback)

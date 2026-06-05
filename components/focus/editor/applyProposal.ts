@@ -20,17 +20,43 @@ export function resolveProposeEditRange(
   oldText: string,
   anchorAfter: string,
 ): ResolvedRange | null {
-  if (!oldText) return null;
+  if (!oldText) {
+    // Empty old_text means INSERT, not replace (e.g. writing into an empty
+    // document, or appending). Return a zero-width range positioned by whichever
+    // anchor is present; with neither, append at the end (= start of an empty
+    // doc). This is what lets the model fill a blank document at all.
+    if (anchorBefore) {
+      const a = markdown.indexOf(anchorBefore);
+      const dup = a >= 0 ? markdown.indexOf(anchorBefore, a + 1) : -1;
+      if (a >= 0 && dup < 0) {
+        const pos = a + anchorBefore.length;
+        return { from: pos, to: pos };
+      }
+      return null;
+    }
+    if (anchorAfter) {
+      const a = markdown.indexOf(anchorAfter);
+      const dup = a >= 0 ? markdown.indexOf(anchorAfter, a + 1) : -1;
+      if (a >= 0 && dup < 0) return { from: a, to: a };
+      return null;
+    }
+    return { from: markdown.length, to: markdown.length };
+  }
   const needle = anchorBefore + oldText + anchorAfter;
   const first = markdown.indexOf(needle);
   if (first < 0) {
-    // Fall back: anchors might have been mangled by whitespace normalization.
-    // Try matching `old_text` alone — only succeed if there's a unique hit.
+    // Fall back 1: match `old_text` alone — only succeed if there's a unique hit.
     const a = markdown.indexOf(oldText);
     const b = a >= 0 ? markdown.indexOf(oldText, a + 1) : -1;
     if (a >= 0 && b < 0) {
       return { from: a, to: a + oldText.length };
     }
+    // Fall back 2: whitespace-tolerant match. Minor drift (a stray space, a
+    // newline vs space) shouldn't make a good edit go stale. Build a regex that
+    // lets any run of whitespace in `old_text` match any run in the doc, and
+    // accept it only when it resolves to exactly one location.
+    const fuzzy = whitespaceTolerantRange(markdown, oldText);
+    if (fuzzy) return fuzzy;
     return null;
   }
   // Must be unique with the full triple too.
@@ -38,6 +64,32 @@ export function resolveProposeEditRange(
   if (second >= 0) return null;
   const from = first + anchorBefore.length;
   return { from, to: from + oldText.length };
+}
+
+/** Unique whitespace-insensitive match of `oldText`, mapped to original offsets. */
+function whitespaceTolerantRange(
+  markdown: string,
+  oldText: string,
+): ResolvedRange | null {
+  const trimmed = oldText.trim();
+  if (trimmed.length < 4) return null; // too short to anchor safely
+  const pattern = trimmed
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/\s+/g, "\\s+");
+  let re: RegExp;
+  try {
+    re = new RegExp(pattern, "g");
+  } catch {
+    return null;
+  }
+  const matches: Array<{ from: number; to: number }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(markdown)) !== null) {
+    matches.push({ from: m.index, to: m.index + m[0].length });
+    if (m.index === re.lastIndex) re.lastIndex++; // guard against zero-width
+    if (matches.length > 1) return null; // ambiguous
+  }
+  return matches.length === 1 ? matches[0] : null;
 }
 
 /**
@@ -111,7 +163,18 @@ export function applyProposalToEditor(
 
   const next =
     markdown.slice(0, range.from) + replacement + markdown.slice(range.to);
+  // Preserve the reading position. setContent re-parses the whole document and
+  // would otherwise jump the view to the top on every accept.
+  const scroller = editor.view.dom.closest(
+    ".canvas-ai-focus-paper",
+  ) as HTMLElement | null;
+  const prevScroll = scroller ? scroller.scrollTop : null;
   editor.commands.setContent(next, { contentType: "markdown", emitUpdate: true });
+  if (scroller && prevScroll != null) {
+    requestAnimationFrame(() => {
+      scroller.scrollTop = prevScroll;
+    });
+  }
   return { ok: true };
 }
 

@@ -27,6 +27,14 @@ declare module "@tldraw/tlschema" {
       ocr: boolean;
       sourceUrl: string;
       pdfData: string;
+      notes: {
+        id: string;
+        quote: string;
+        comment: string;
+        start: number;
+        end: number;
+        createdAt: number;
+      }[];
     };
     "canvas-ai-image": {
       w: number;
@@ -114,6 +122,20 @@ declare module "@tldraw/tlschema" {
       }[];
       errorMessage: string;
     };
+    "canvas-ai-notes": {
+      w: number;
+      h: number;
+      sourceId: string;
+      title: string;
+      notes: {
+        id: string;
+        quote: string;
+        comment: string;
+        start: number;
+        end: number;
+        createdAt: number;
+      }[];
+    };
   }
 }
 
@@ -139,6 +161,14 @@ type _CheckUpload = TLBaseShape<
     ocr: boolean;
     sourceUrl: string;
     pdfData: string;
+    notes: {
+      id: string;
+      quote: string;
+      comment: string;
+      start: number;
+      end: number;
+      createdAt: number;
+    }[];
   }
 > extends TLBaseBoxShape & TLShape
   ? true
@@ -213,10 +243,31 @@ type _CheckDocument = TLBaseShape<
   ? true
   : never;
 
+type _CheckNotes = TLBaseShape<
+  "canvas-ai-notes",
+  {
+    w: number;
+    h: number;
+    sourceId: string;
+    title: string;
+    notes: {
+      id: string;
+      quote: string;
+      comment: string;
+      start: number;
+      end: number;
+      createdAt: number;
+    }[];
+  }
+> extends TLBaseBoxShape & TLShape
+  ? true
+  : never;
+
 export type {
   _CheckText,
   _CheckUpload,
   _CheckImage,
   _CheckLink,
   _CheckDocument,
+  _CheckNotes,
 };

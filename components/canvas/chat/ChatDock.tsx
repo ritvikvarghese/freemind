@@ -44,6 +44,12 @@ const MODE_LABEL: Record<ComposerMode, string> = {
   "create-artifact": "Create artifact",
 };
 
+// Canvas chat panel width is user-draggable (left edge) and persisted.
+const CHAT_MIN_W = 340;
+const CHAT_MAX_W = 760;
+const CHAT_DEFAULT_W = 400;
+const CHAT_WIDTH_KEY = "canvas-ai:chat-width";
+
 // The composer's Deepsearch toggle layers on top of the chat's started mode.
 function resolveTurnMode(cm: ComposerMode, started: AgentMode): AgentMode {
   if (cm === "deepsearch") return "deepsearch";
@@ -83,6 +89,48 @@ export function ChatDock({ id }: { id: string }) {
   const [contextOpen, setContextOpen] = useState(false);
 
   const [quotedContext, setQuotedContext] = useState<string | null>(null);
+  const [width, setWidth] = useState<number>(() => {
+    if (typeof window === "undefined") return CHAT_DEFAULT_W;
+    const v = Number(window.localStorage.getItem(CHAT_WIDTH_KEY));
+    return Number.isFinite(v) && v >= CHAT_MIN_W && v <= CHAT_MAX_W
+      ? v
+      : CHAT_DEFAULT_W;
+  });
+
+  // Drag the left edge to resize. Panel is docked right, so dragging toward the
+  // left (smaller clientX) widens it. Persist on release.
+  const startResize = useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX;
+      const startW = width;
+      const onMove = (ev: PointerEvent) => {
+        const next = Math.min(
+          CHAT_MAX_W,
+          Math.max(CHAT_MIN_W, startW + (startX - ev.clientX)),
+        );
+        setWidth(next);
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        document.body.style.cursor = "";
+        setWidth((w) => {
+          try {
+            window.localStorage.setItem(CHAT_WIDTH_KEY, String(w));
+          } catch {
+            /* storage full / blocked — width just won't persist */
+          }
+          return w;
+        });
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      document.body.style.cursor = "col-resize";
+    },
+    [width],
+  );
   const [quoteBtn, setQuoteBtn] = useState<
     { text: string; x: number; y: number } | null
   >(null);
@@ -151,19 +199,18 @@ export function ChatDock({ id }: { id: string }) {
       const focusBlock = focused.length
         ? `<focus>${focused.join(", ")}</focus>\n\n`
         : "";
-      // Display the quote as a markdown blockquote above the typed text; wire it
-      // as a tagged block so the model treats it as context, not the request.
-      const displayText = quote
-        ? `> ${quote.split("\n").join("\n> ")}${text ? `\n\n${text}` : ""}`
-        : text;
+      // The quote renders as its own styled block above the bubble (see
+      // ChatThread); wire it as a tagged block so the model treats it as
+      // context, not the request.
       const wireMessage = quote
         ? `${focusBlock}<quote>\n${quote}\n</quote>\n\n${text || "Discuss or refine the quoted text above."}`
         : `${focusBlock}${text}`;
       const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "user",
-        text: displayText,
+        text,
         createdAt: Date.now(),
+        ...(quote ? { quote } : {}),
         ...(attachmentIds.length ? { attachmentIds } : {}),
       };
       const display = [...prior, userMsg];
@@ -367,11 +414,23 @@ export function ChatDock({ id }: { id: string }) {
 
   return (
     <aside
-      className="pointer-events-auto fixed right-0 top-0 z-30 flex h-full w-[400px] flex-col overflow-hidden border-l border-hairline bg-elevated"
+      className="pointer-events-auto fixed right-0 top-0 z-30 flex h-full flex-col overflow-hidden border-l border-hairline bg-elevated"
+      style={{ width }}
       aria-label="Canvas chat"
       onPointerDown={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
+      <div
+        onPointerDown={startResize}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize chat panel"
+        title="Drag to resize"
+        className="group absolute inset-y-0 left-0 z-20 w-2 cursor-col-resize"
+      >
+        <div className="absolute inset-y-0 left-0 w-[2px] bg-transparent transition-colors duration-100 group-hover:bg-accent/40" />
+      </div>
       <div className="flex items-center justify-between gap-2 border-b border-hairline px-3 py-2">
         <span className="truncate text-[13px] font-medium text-text-primary">
           {session.title}

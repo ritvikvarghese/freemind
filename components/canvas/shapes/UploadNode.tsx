@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { openFocus } from "@/lib/focus/openFocus";
 import { isVisionPdf } from "@/lib/extract/pdf";
+import type { Note } from "@/lib/notes/types";
 import { ConnectHandle } from "./ConnectHandle";
 
 export type UploadNodeShape = TLBaseShape<
@@ -51,6 +52,12 @@ export type UploadNodeShape = TLBaseShape<
      * the PDF has a real text layer (we use fullText) or for non-PDFs.
      */
     pdfData: string;
+    /**
+     * Reader highlights clipped from this document (txt/md/docx). Each note is
+     * a verbatim quote + optional comment, anchored by rendered-text offsets so
+     * the underline survives reopen. Empty for PDFs/youtube (not yet supported).
+     */
+    notes: Note[];
   }
 >;
 
@@ -75,6 +82,16 @@ export class UploadNodeUtil extends BaseBoxShapeUtil<UploadNodeShape> {
     ocr: T.boolean,
     sourceUrl: T.string,
     pdfData: T.string,
+    notes: T.arrayOf(
+      T.object({
+        id: T.string,
+        quote: T.string,
+        comment: T.string,
+        start: T.number,
+        end: T.number,
+        createdAt: T.number,
+      }),
+    ),
   };
 
   static override migrations = createShapePropsMigrationSequence({
@@ -100,6 +117,14 @@ export class UploadNodeUtil extends BaseBoxShapeUtil<UploadNodeShape> {
         up: (props) => {
           const p = props as { pdfData?: string };
           if (typeof p.pdfData !== "string") p.pdfData = "";
+        },
+        down: "retired",
+      },
+      {
+        id: "com.tldraw.shape.canvas-ai-upload/4",
+        up: (props) => {
+          const p = props as { notes?: unknown[] };
+          if (!Array.isArray(p.notes)) p.notes = [];
         },
         down: "retired",
       },
@@ -132,6 +157,7 @@ export class UploadNodeUtil extends BaseBoxShapeUtil<UploadNodeShape> {
       ocr: false,
       sourceUrl: "",
       pdfData: "",
+      notes: [],
     };
   }
 

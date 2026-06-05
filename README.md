@@ -15,6 +15,21 @@ Open http://localhost:3000. On first run, click the **"Add your API key"** butto
 
 `pnpm use` builds the app and serves it, which is the normal way to run it. For development with hot reload, use `pnpm dev` instead. You need Node 20 or newer and pnpm 10; the postinstall step copies the pdf.js worker into `public/`.
 
+### Pick one address and stick with it
+
+Your boards and notes are stored in the browser, scoped to the exact address you open, **including the port**. `http://localhost:3000` and `http://localhost:3005` are treated as two completely separate sites with their own, independent data.
+
+So decide on one address for Freemind and always use it. If you switch ports later, your boards are not deleted, but they will not show up under the new address (they are still sitting under the old one).
+
+If something else on your machine already uses port 3000, run Freemind on a different port and then keep using that same one every time:
+
+```bash
+pnpm build
+pnpm exec next start -p 3005
+```
+
+Then open http://localhost:3005 (or whatever port you chose). If you want a portable copy of your boards regardless of port, use Export in Settings.
+
 ## Your API key
 
 Freemind talks to the Anthropic API straight from the browser, so you bring your own key. Get one at [console.anthropic.com](https://console.anthropic.com/settings/keys).
@@ -60,7 +75,7 @@ These are optional and all go in `.env.local`:
 
 - It's almost all client-side. The one bit of server code is a small Next.js route at `app/api/transcript` that fetches YouTube transcripts, since the browser can't do that itself (CORS).
 - Only one research run happens at a time. The Run button is disabled while one is streaming.
-- No accounts, no sharing, no sync. Each board is a local document in one browser.
+- No accounts, no sharing, no sync. Each board is a local document in one browser, scoped to the address (and port) you open. Keep using the same address so your boards stay visible (see "Pick one address and stick with it" above), and Export from Settings if you want a backup.
 - Freemind uses tldraw on its free tier, so there's a small "made with tldraw" watermark in the corner. It has to stay unless you buy a tldraw license. See [tldraw.dev](https://tldraw.dev/#pricing).
 - A lot of large files can fill the browser's storage quota. You'll get a toast when that happens; clear a board or delete sources you don't need.
 - Images are stored inline (base64) inside the document, so a document with images gets large, and that size counts against your tokens if you later feed that document back in as a source.

@@ -9,7 +9,7 @@
     "dev": "NODE_OPTIONS=--max-old-space-size=7168 next dev",
     "build": "NODE_OPTIONS=--max-old-space-size=7168 next build",
     "start": "next start",
-    "use": "pnpm build && pnpm start",
+    "use": "rm -rf .next && pnpm build && pnpm start",
     "lint": "eslint",
     "postinstall": "mkdir -p public && cp node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs public/pdf.worker.min.mjs"
   },

@@ -10,6 +10,7 @@ import {
   useCanvasChats,
 } from "@/lib/storage/canvasChats";
 import { openChat, useOpenChatId } from "@/lib/chat/openChat";
+import { useApiKey } from "@/lib/storage/apiKey";
 
 function modeLabel(mode: AgentMode): string {
   return mode === "deepsearch"
@@ -35,6 +36,7 @@ export function ChatsMenu() {
   const boardKey = useBoardKey();
   const chats = useCanvasChats(boardKey);
   const openId = useOpenChatId();
+  const { hasKey } = useApiKey();
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -70,6 +72,10 @@ export function ChatsMenu() {
   // Slide the cluster left of the dock when it's open, so nothing stacks. The
   // gear sits at right:416 in that state, so Chats goes just left of it.
   const right = openId ? 464 : 64;
+
+  // Chats only exist once there's an API key (you can't create one without it),
+  // so hide the launcher until a key is set rather than show an empty control.
+  if (!hasKey) return null;
 
   return (
     <div

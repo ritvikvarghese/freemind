@@ -153,38 +153,42 @@ export function ApiKeyPanel() {
   return (
     <div
       ref={panelRef}
-      className="pointer-events-auto fixed top-4 z-40 flex items-center gap-2"
+      className="pointer-events-auto fixed top-4 z-40"
       style={{
         right: openChatId ? 416 : 16,
         transition: "right 140ms var(--ease-out-fast)",
       }}
       onContextMenu={(e) => e.stopPropagation()}
     >
-      {/* First-run nudge: only while no key is set and the panel is closed.
-          Disappears for good once a key is saved. */}
-      {!hasKey && !open ? (
+      {/* The pill + gear sit in their own row so the absolutely-positioned
+          panel below stays anchored regardless of whether the pill shows. */}
+      <div className="flex items-center justify-end gap-2">
+        {/* First-run prompt: only while no key is set and the panel is closed.
+            Disappears for good once a key is saved. */}
+        {!hasKey && !open ? (
+          <button
+            type="button"
+            onClick={openPanel}
+            className="flex items-center gap-1.5 rounded-button border border-[var(--color-accent)] bg-elevated px-2.5 py-1.5 text-[12px] font-medium text-text-primary shadow-[var(--shadow-floating)] transition-colors duration-100 hover:bg-surface-hover"
+          >
+            <KeyRound className="h-3.5 w-3.5 text-[var(--color-accent)]" aria-hidden />
+            Set your API key
+            <ArrowRight className="h-3.5 w-3.5 text-text-tertiary" aria-hidden />
+          </button>
+        ) : null}
         <button
           type="button"
-          onClick={() => setOpen(true)}
-          className="flex items-center gap-1.5 rounded-button border border-[var(--color-accent)] bg-elevated px-2.5 py-1.5 text-[12px] font-medium text-text-primary shadow-[var(--shadow-floating)] transition-colors duration-100 hover:bg-surface-hover"
+          title="Settings"
+          aria-label="Settings"
+          onClick={togglePanel}
+          className="h-9 w-9 grid place-items-center rounded-button text-text-secondary hover:text-text-primary bg-elevated border border-hairline hover:border-hairline-hover transition-colors duration-100"
         >
-          <KeyRound className="h-3.5 w-3.5 text-[var(--color-accent)]" aria-hidden />
-          Add your API key
-          <ArrowRight className="h-3.5 w-3.5 text-text-tertiary" aria-hidden />
+          <SettingsIcon className="h-4 w-4" aria-hidden />
         </button>
-      ) : null}
-      <button
-        type="button"
-        title="Settings"
-        aria-label="Settings"
-        onClick={togglePanel}
-        className="h-9 w-9 grid place-items-center rounded-button text-text-secondary hover:text-text-primary bg-elevated border border-hairline hover:border-hairline-hover transition-colors duration-100"
-      >
-        <SettingsIcon className="h-4 w-4" aria-hidden />
-      </button>
+      </div>
 
       {open ? (
-        <div className="absolute right-0 mt-2 max-h-[calc(100vh-72px)] w-[340px] overflow-y-auto rounded-panel border border-hairline bg-elevated p-4 shadow-[var(--shadow-floating)]">
+        <div className="absolute right-0 top-full mt-2 max-h-[calc(100vh-72px)] w-[340px] overflow-y-auto rounded-panel border border-hairline bg-elevated p-4 shadow-[var(--shadow-floating)]">
           <div className="text-[13px] font-medium tracking-tight text-text-primary">
             Anthropic API key
           </div>

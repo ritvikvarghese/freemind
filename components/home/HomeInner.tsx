@@ -35,9 +35,13 @@ import {
 type FolderDnd = {
   draggingId: string | null; // board being dragged
   draggingFolderId: string | null; // folder being dragged
+  draggingFolderHasChildren: boolean; // dragged folder has subfolders (2-level cap)
   overId: string | null; // board hovered (reorder target)
   overFolderId: string | null; // folder hovered by a dragged board (drop-in)
   overFolderRowId: string | null; // folder hovered by a dragged folder
+  // Where a dropped folder lands relative to the hovered folder: "before" =
+  // reorder above it (top edge), "inside" = nest within it (middle).
+  folderDropMode: "before" | "inside" | null;
   expanded: Set<string>;
   onToggle: (id: string) => void;
   onDeleteFolder: (id: string) => void;
@@ -53,7 +57,7 @@ type FolderDnd = {
   // folders
   onFolderDragStart: (id: string) => void;
   onFolderDragEnd: () => void;
-  onFolderDragEnterRow: (id: string) => void;
+  onFolderDragOverRow: (id: string, mode: "before" | "inside") => void;
   onFolderDrop: (id: string) => void;
   // data lookups (for recursion)
   folderBoards: (fid: string) => Board[];
@@ -72,6 +76,9 @@ export function HomeInner() {
   const [overId, setOverId] = useState<string | null>(null);
   const [overFolderId, setOverFolderId] = useState<string | null>(null);
   const [overFolderRowId, setOverFolderRowId] = useState<string | null>(null);
+  const [folderDropMode, setFolderDropMode] = useState<
+    "before" | "inside" | null
+  >(null);
   const [overHeader, setOverHeader] = useState(false);
   // Folders start collapsed for a clean home screen. Expand state is
   // session-local (a Set of expanded ids) so a reload resets to all-closed.
@@ -91,6 +98,7 @@ export function HomeInner() {
     setOverId(null);
     setOverFolderId(null);
     setOverFolderRowId(null);
+    setFolderDropMode(null);
     setOverHeader(false);
   }
 
@@ -121,12 +129,20 @@ export function HomeInner() {
     if (sourceId) moveBoardToFolder(sourceId, folderId);
   }
 
-  // Drop a folder onto another folder → make it a sibling of the target, placed
-  // before it (reorder within a level, or move between levels). See boards.ts.
+  // Drop a folder onto another folder. "inside" (hovered the middle) nests it
+  // within the target; "before" (hovered the top edge) makes it a sibling placed
+  // before the target. See boards.ts for the 2-level cap.
   function handleFolderDrop(targetId: string) {
     const sourceId = draggingFolderId;
+    const mode = folderDropMode;
     clearDrag();
-    if (sourceId) placeFolderBefore(sourceId, targetId);
+    if (!sourceId) return;
+    if (mode === "inside") {
+      moveFolderToParent(sourceId, targetId);
+      setExpanded((prev) => new Set(prev).add(targetId)); // reveal the nested folder
+    } else {
+      placeFolderBefore(sourceId, targetId);
+    }
   }
 
   // Drop a folder onto the CANVASES header → promote it to the top level.
@@ -155,13 +171,23 @@ export function HomeInner() {
 
   const topFolders = folders.filter((f) => !f.parentId);
   const topLevel = boards.filter((b) => !b.folderId);
+  const draggingFolderHasChildren =
+    draggingFolderId !== null &&
+    folders.some((f) => f.parentId === draggingFolderId);
+
+  const onFolderDragOverRow = (id: string, mode: "before" | "inside") => {
+    setOverFolderRowId(id);
+    setFolderDropMode(mode);
+  };
 
   const dnd: FolderDnd = {
     draggingId,
     draggingFolderId,
+    draggingFolderHasChildren,
     overId,
     overFolderId,
     overFolderRowId,
+    folderDropMode,
     expanded,
     onToggle: toggleExpand,
     onDeleteFolder: deleteFolder,
@@ -175,7 +201,7 @@ export function HomeInner() {
     onBoardDragEnterFolder: setOverFolderId,
     onFolderDragStart: setDraggingFolderId,
     onFolderDragEnd: clearDrag,
-    onFolderDragEnterRow: setOverFolderRowId,
+    onFolderDragOverRow,
     onFolderDrop: handleFolderDrop,
     folderBoards: (fid) => boards.filter((b) => b.folderId === fid),
     subfoldersOf: (fid) => folders.filter((f) => f.parentId === fid),
@@ -293,11 +319,18 @@ function FolderRow({
   const isDraggingSelf = dnd.draggingFolderId === folder.id;
   const isBoardDropTarget =
     dnd.overFolderId === folder.id && dnd.draggingId !== null;
-  const isFolderDropTarget =
+  const isFolderHovered =
     dnd.overFolderRowId === folder.id &&
     dnd.draggingFolderId !== null &&
     dnd.draggingFolderId !== folder.id;
-  const isDropTarget = isBoardDropTarget || isFolderDropTarget;
+  // Nesting is only allowed into a top-level folder by a childless folder
+  // (2-level cap). The middle zone reads as "inside" only when that holds.
+  const canNest =
+    folder.parentId === undefined && !dnd.draggingFolderHasChildren;
+  const folderInside =
+    isFolderHovered && dnd.folderDropMode === "inside" && canNest;
+  const folderBefore = isFolderHovered && !folderInside;
+  const insideHighlight = isBoardDropTarget || folderInside;
 
   return (
     <li>
@@ -309,11 +342,17 @@ function FolderRow({
         }}
         onDragEnd={dnd.onFolderDragEnd}
         onDragEnter={() => {
-          if (dnd.draggingFolderId) dnd.onFolderDragEnterRow(folder.id);
-          else if (dnd.draggingId) dnd.onBoardDragEnterFolder(folder.id);
+          if (dnd.draggingId) dnd.onBoardDragEnterFolder(folder.id);
         }}
         onDragOver={(e) => {
-          if (dnd.draggingFolderId || dnd.draggingId) e.preventDefault();
+          if (dnd.draggingFolderId && dnd.draggingFolderId !== folder.id) {
+            e.preventDefault();
+            const rect = e.currentTarget.getBoundingClientRect();
+            const inTopZone = e.clientY - rect.top < rect.height * 0.4;
+            dnd.onFolderDragOverRow(folder.id, inTopZone ? "before" : "inside");
+          } else if (dnd.draggingId) {
+            e.preventDefault();
+          }
         }}
         onDrop={(e) => {
           e.preventDefault();
@@ -323,10 +362,12 @@ function FolderRow({
         }}
         style={{ opacity: isDraggingSelf ? 0.4 : 1 }}
         className={
-          "group flex items-center gap-1 rounded-button px-1 transition-colors duration-100 " +
-          (isDropTarget
-            ? "bg-surface-hover ring-1 ring-accent/60"
-            : "hover:bg-surface-hover")
+          "group flex items-center gap-1 rounded-button border-t-2 px-1 transition-colors duration-100 " +
+          (insideHighlight
+            ? "border-transparent bg-surface-hover ring-1 ring-accent/60"
+            : folderBefore
+              ? "border-accent"
+              : "border-transparent hover:bg-surface-hover")
         }
       >
         <button

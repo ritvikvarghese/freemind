@@ -23,6 +23,7 @@ import { DocumentNodeUtil } from "./shapes/DocumentNode";
 import { NotesNodeUtil } from "./shapes/NotesNode";
 import { ResizableNoteUtil } from "./shapes/ResizableNoteUtil";
 import { CanvasOverlay } from "./CanvasOverlay";
+import { BoardSidebar } from "./BoardSidebar";
 import { ShapeContextMenu } from "./ShapeContextMenu";
 import { CanvasRichTextToolbar } from "./toolbar/CanvasRichTextToolbar";
 import { WorldOverlay } from "./overlay/WorldOverlay";
@@ -310,6 +311,10 @@ export function CanvasRoot({
             options={{ createTextOnCanvasDoubleClick: false }}
             onMount={onMount}
           />
+          {/* Rendered OUTSIDE <Tldraw> so the canvas container's drag/contextmenu
+              listeners can't hijack the sidebar's native DnD. It needs no editor,
+              only BoardContext. */}
+          <BoardSidebar />
         </BoardProvider>
       </div>
     </ToastProvider>

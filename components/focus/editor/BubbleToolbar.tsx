@@ -33,6 +33,10 @@ type ContentProps = {
   /** Show the heading (paragraph/H1-H3) menu. Off for canvas text shapes,
    *  where tldraw doesn't render headings. Defaults on (focus mode). */
   showHeadings?: boolean;
+  /** Optional control rendered at the start of the row (before formatting),
+   *  followed by a divider. Used by the canvas toolbar for the per-shape text
+   *  color picker (tldraw text color is a shape style, not a Tiptap mark). */
+  leadingControl?: React.ReactNode;
 };
 
 type Props = ContentProps;
@@ -113,6 +117,7 @@ export function EditorToolbarContent({
   onGenerate,
   onComment,
   showHeadings = true,
+  leadingControl,
 }: ContentProps) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkInput, setLinkInput] = useState("");
@@ -198,6 +203,12 @@ export function EditorToolbarContent({
         </div>
       ) : (
         <>
+          {leadingControl ? (
+            <>
+              {leadingControl}
+              <Divider />
+            </>
+          ) : null}
           {showHeadings ? (
             <>
               <HeadingMenu

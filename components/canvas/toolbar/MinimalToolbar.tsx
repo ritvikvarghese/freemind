@@ -51,7 +51,14 @@ export function MinimalToolbar() {
     >
       <ToolbarButton
         label="Add text (click canvas to place)"
-        onClick={() => editor.setCurrentTool("text")}
+        onClick={() => {
+          // Text and notes share tldraw's single DefaultColorStyle, so the note
+          // tool may have armed it yellow; force black (theme-aware ink) so new
+          // text never inherits the note color. Color is then changed per shape
+          // from the selection toolbar (CanvasRichTextToolbar).
+          editor.setStyleForNextShapes(DefaultColorStyle, "black");
+          editor.setCurrentTool("text");
+        }}
       >
         <Type className="h-4 w-4" aria-hidden />
       </ToolbarButton>

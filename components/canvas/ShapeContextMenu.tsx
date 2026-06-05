@@ -111,7 +111,8 @@ export function ShapeContextMenu(props: TLUiContextMenuProps) {
       type: "text",
       x: pt.x,
       y: pt.y,
-      props: { richText: toRichText(""), autoSize: true },
+      // Explicit black so text never inherits the note tool's armed color.
+      props: { richText: toRichText(""), autoSize: true, color: "black" },
     });
     editor.select(id);
     editor.setEditingShape(id);
@@ -355,15 +356,14 @@ function MultiActions({
   return (
     <TldrawUiMenuGroup id="freemind-multi-actions">
       {links.length > 0 ? (
+        // Browsers only allow one new tab per click (a popup-blocker limit no
+        // page can bypass), so a multi-link selection opens just the first.
         <TldrawUiMenuItem
           id="multi-open-links"
-          label={tk(
-            links.length === 1 ? "Open link in new tab" : "Open links in new tabs",
-          )}
+          label={tk("Open link in new tab")}
           onSelect={() => {
-            for (const l of links) {
-              if (l.props.url) window.open(l.props.url, "_blank", "noopener,noreferrer");
-            }
+            const url = links[0]?.props.url;
+            if (url) window.open(url, "_blank", "noopener,noreferrer");
           }}
         />
       ) : null}

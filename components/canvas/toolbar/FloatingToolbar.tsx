@@ -92,7 +92,8 @@ export function FloatingToolbar() {
       type: "text",
       x: menu.page.x,
       y: menu.page.y,
-      props: { richText: toRichText(""), autoSize: true },
+      // Explicit black so text never inherits the note tool's armed color.
+      props: { richText: toRichText(""), autoSize: true, color: "black" },
     });
     editor.select(id);
     editor.setEditingShape(id);

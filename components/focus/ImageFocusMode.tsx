@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useEditor, useValue, type TLShapeId } from "tldraw";
+import { useFocusTransition } from "./useFocusTransition";
 import {
   X,
   Loader2,
@@ -39,8 +40,12 @@ export function ImageFocusMode({ shapeId, onClose }: Props) {
 
   const [ocrText, setOcrText] = useState(shape?.props.ocrText ?? "");
   const [name, setName] = useState(shape?.props.filename ?? "");
-  const [mounted, setMounted] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  // Open/close animation: grow out of / shrink back into the card's rect.
+  const { style: focusStyle, requestClose } = useFocusTransition(
+    shapeId,
+    onClose,
+  );
   const latest = useRef(ocrText);
   const latestName = useRef(name);
   const flushTimer = useRef<number | null>(null);
@@ -97,23 +102,18 @@ export function ImageFocusMode({ shapeId, onClose }: Props) {
   }, [flush]);
 
   useEffect(() => {
-    const id = window.requestAnimationFrame(() => setMounted(true));
-    return () => window.cancelAnimationFrame(id);
-  }, []);
-
-  useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.stopPropagation();
         flush();
         flushName();
-        onClose();
+        requestClose();
       }
     }
     window.addEventListener("keydown", onKey, { capture: true });
     return () =>
       window.removeEventListener("keydown", onKey, { capture: true });
-  }, [onClose, flush, flushName]);
+  }, [requestClose, flush, flushName]);
 
   useEffect(() => {
     if (!shape) onClose();
@@ -153,12 +153,7 @@ export function ImageFocusMode({ shapeId, onClose }: Props) {
       onPointerDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
       className="canvas-ai-focus-root fixed inset-0 z-50 flex flex-col bg-overlay"
-      style={{
-        opacity: mounted ? 1 : 0,
-        transform: mounted ? "scale(1)" : "scale(0.97)",
-        transition:
-          "opacity 200ms var(--ease-out-fast), transform 300ms cubic-bezier(0.16, 1, 0.3, 1)",
-      }}
+      style={focusStyle}
     >
       <div className="border-b border-hairline bg-elevated">
         <div className="mx-auto flex w-full max-w-[1100px] items-center gap-3 px-6 py-3">
@@ -195,7 +190,7 @@ export function ImageFocusMode({ shapeId, onClose }: Props) {
             onClick={() => {
               flush();
               flushName();
-              onClose();
+              requestClose();
             }}
             className="ml-1 grid h-7 w-7 place-items-center rounded-button text-text-secondary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
           >

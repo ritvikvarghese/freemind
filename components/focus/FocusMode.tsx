@@ -9,6 +9,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useEditor, useValue, type TLShapeId } from "tldraw";
+import { useFocusTransition } from "./useFocusTransition";
 import {
   X,
   ChevronDown,
@@ -93,7 +94,12 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
 
   const [title, setTitle] = useState(shape?.props.title ?? "");
   const [markdown, setMarkdown] = useState(shape?.props.markdown ?? "");
-  const [mounted, setMounted] = useState(false);
+  // Open/close animation: the panel grows out of (and shrinks back into) the
+  // card's on-canvas rect. `requestClose` plays the exit before unmounting.
+  const { style: focusStyle, requestClose } = useFocusTransition(
+    shapeId,
+    onClose,
+  );
 
   // Track latest values for the debounced flush without re-creating timers.
   const latestTitle = useRef(title);
@@ -147,26 +153,20 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
   // autosave + comment writes. The fullscreen overlay already covers the
   // canvas, so readonly mode isn't needed for input isolation.
 
-  // Mount marker for the entry transition + portal target gating.
-  useEffect(() => {
-    const id = window.requestAnimationFrame(() => setMounted(true));
-    return () => window.cancelAnimationFrame(id);
-  }, []);
-
   // Esc to close — always flush before exit.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.stopPropagation();
         flush();
-        onClose();
+        requestClose();
       }
     }
     // Capture phase so we beat tldraw's window-level listener.
     window.addEventListener("keydown", onKey, { capture: true });
     return () =>
       window.removeEventListener("keydown", onKey, { capture: true });
-  }, [flush, onClose]);
+  }, [flush, requestClose]);
 
   // Flush on unmount in case the user closed via X without an intervening
   // debounce tick.
@@ -198,8 +198,8 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
 
   const handleClose = useCallback(() => {
     flush();
-    onClose();
-  }, [flush, onClose]);
+    requestClose();
+  }, [flush, requestClose]);
 
   // If the shape disappeared (e.g. deleted from another surface), exit cleanly.
   useEffect(() => {
@@ -342,12 +342,7 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
       onPointerDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
       className="canvas-ai-focus-root fixed inset-0 z-50 flex flex-col bg-overlay"
-      style={{
-        opacity: mounted ? 1 : 0,
-        transform: mounted ? "scale(1)" : "scale(0.97)",
-        transition:
-          "opacity 200ms var(--ease-out-fast), transform 300ms cubic-bezier(0.16, 1, 0.3, 1)",
-      }}
+      style={focusStyle}
     >
       <Header
         title={title}

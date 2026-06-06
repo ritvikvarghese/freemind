@@ -2,6 +2,7 @@
 
 import { useEditor, useValue } from "tldraw";
 import { getProvenanceEdges } from "@/lib/canvas/provenance";
+import { edgeToEdge } from "@/lib/canvas/lineEndpoints";
 
 /**
  * Lives under tldraw's `Background` slot (below shapes). The Background slot
@@ -34,13 +35,10 @@ export function ProvenanceLines() {
         const docBounds = editor.getShapePageBounds(e.from);
         const srcBounds = editor.getShapePageBounds(e.to);
         if (!docBounds || !srcBounds) continue;
-        out.push({
-          key: `${e.from}->${e.to}`,
-          sx: srcBounds.x + srcBounds.w / 2,
-          sy: srcBounds.y + srcBounds.h / 2,
-          dx: docBounds.x + docBounds.w / 2,
-          dy: docBounds.y + docBounds.h / 2,
-        });
+        // Clip to edges so a line never crosses a shape (transparent text
+        // shapes otherwise show the line piercing to their center).
+        const { x1, y1, x2, y2 } = edgeToEdge(srcBounds, docBounds);
+        out.push({ key: `${e.from}->${e.to}`, sx: x1, sy: y1, dx: x2, dy: y2 });
       }
       return out;
     },

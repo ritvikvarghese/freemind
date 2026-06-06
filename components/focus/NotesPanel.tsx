@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Trash2, StickyNote, Plus } from "lucide-react";
+import { Trash2, StickyNote, Plus, Copy, SquarePlus } from "lucide-react";
 import type { Note } from "@/lib/notes/types";
 
 type NotesPanelProps = {
@@ -12,6 +12,10 @@ type NotesPanelProps = {
   /** Add an empty note of your own (no highlight). When omitted, the button is
    *  hidden. */
   onAddNote?: () => void;
+  /** Copy a note's text (quote + comment) to the clipboard. */
+  onCopy?: (note: Note) => void;
+  /** Drop a note's text onto the canvas as its own shape. */
+  onCopyToCanvas?: (note: Note) => void;
 };
 
 /**
@@ -25,6 +29,8 @@ export function NotesPanel({
   onDelete,
   onJump,
   onAddNote,
+  onCopy,
+  onCopyToCanvas,
 }: NotesPanelProps) {
   const ordered = useMemo(
     () =>
@@ -64,7 +70,7 @@ export function NotesPanel({
         {ordered.length === 0 ? (
           <div className="px-1 py-2 text-[12px] leading-relaxed text-text-tertiary">
             Select text in the document and choose{" "}
-            <span className="text-text-secondary">Underline</span> to clip it
+            <span className="text-text-secondary">Add to notes</span> to clip it
             here, or use{" "}
             <span className="text-text-secondary">new note</span> to write your
             own. A comment is optional.
@@ -78,6 +84,8 @@ export function NotesPanel({
                 onUpdateComment={onUpdateComment}
                 onDelete={onDelete}
                 onJump={onJump}
+                onCopy={onCopy}
+                onCopyToCanvas={onCopyToCanvas}
               />
             ))}
           </div>
@@ -92,11 +100,15 @@ function NoteCard({
   onUpdateComment,
   onDelete,
   onJump,
+  onCopy,
+  onCopyToCanvas,
 }: {
   note: Note;
   onUpdateComment: (id: string, comment: string) => void;
   onDelete: (id: string) => void;
   onJump: (note: Note) => void;
+  onCopy?: (note: Note) => void;
+  onCopyToCanvas?: (note: Note) => void;
 }) {
   const [comment, setComment] = useState(note.comment);
   const latest = useRef(comment);
@@ -140,15 +152,39 @@ function NoteCard({
             {note.quote}
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => onDelete(note.id)}
-          title="Delete note"
-          aria-label="Delete note"
-          className="grid h-6 w-6 shrink-0 place-items-center rounded-button text-text-tertiary opacity-0 transition-opacity duration-100 hover:bg-surface-hover hover:text-text-primary group-hover:opacity-100"
-        >
-          <Trash2 className="h-3.5 w-3.5" aria-hidden />
-        </button>
+        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover:opacity-100">
+          {onCopy ? (
+            <button
+              type="button"
+              onClick={() => onCopy(note)}
+              title="Copy note text"
+              aria-label="Copy note text"
+              className="grid h-6 w-6 place-items-center rounded-button text-text-tertiary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
+            >
+              <Copy className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          ) : null}
+          {onCopyToCanvas ? (
+            <button
+              type="button"
+              onClick={() => onCopyToCanvas(note)}
+              title="Copy note to canvas"
+              aria-label="Copy note to canvas"
+              className="grid h-6 w-6 place-items-center rounded-button text-text-tertiary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
+            >
+              <SquarePlus className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => onDelete(note.id)}
+            title="Delete note"
+            aria-label="Delete note"
+            className="grid h-6 w-6 place-items-center rounded-button text-text-tertiary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
+          >
+            <Trash2 className="h-3.5 w-3.5" aria-hidden />
+          </button>
+        </div>
       </div>
       <textarea
         value={comment}

@@ -14,10 +14,14 @@ import {
   Maximize2,
   Minimize2,
   Plus,
+  Copy,
+  SquarePlus,
+  type LucideIcon,
 } from "lucide-react";
 import { MarkdownView } from "@/components/MarkdownView";
 import type { UploadNodeShape } from "@/components/canvas/shapes/UploadNode";
 import { syncNotesNode } from "@/components/canvas/shapes/NotesNode";
+import { copyTextToCanvas } from "@/components/canvas/copyToCanvas";
 import type { Note } from "@/lib/notes/types";
 import { newNoteId } from "@/lib/notes/types";
 import {
@@ -221,6 +225,43 @@ export function UploadFocusMode({ shapeId, onClose }: Props) {
     setPending(null);
   }, [pending, writeNotes, readNotes]);
 
+  // Copy arbitrary text to the clipboard (best-effort; silent if blocked).
+  const copyText = useCallback(async (text: string) => {
+    const t = text.trim();
+    if (!t) return;
+    try {
+      await navigator.clipboard.writeText(t);
+    } catch {
+      /* clipboard unavailable (insecure context / denied) — no-op */
+    }
+  }, []);
+
+  // Selection-box actions: operate on the captured quote so they survive the
+  // selection being cleared, then dismiss the box.
+  const copyPending = useCallback(() => {
+    if (!pending) return;
+    void copyText(pending.quote);
+    window.getSelection()?.removeAllRanges();
+    setPending(null);
+  }, [pending, copyText]);
+
+  const copyPendingToCanvas = useCallback(() => {
+    if (!pending) return;
+    copyTextToCanvas(editor, shapeId, pending.quote);
+    window.getSelection()?.removeAllRanges();
+    setPending(null);
+  }, [pending, editor, shapeId]);
+
+  // Note-card actions (right rail): copy / send the note's text to the canvas.
+  const copyNote = useCallback(
+    (note: Note) => void copyText(noteText(note)),
+    [copyText],
+  );
+  const copyNoteToCanvas = useCallback(
+    (note: Note) => copyTextToCanvas(editor, shapeId, noteText(note)),
+    [editor, shapeId],
+  );
+
   const updateNoteComment = useCallback(
     (id: string, comment: string) => {
       writeNotes(readNotes().map((n) => (n.id === id ? { ...n, comment } : n)));
@@ -292,6 +333,8 @@ export function UploadFocusMode({ shapeId, onClose }: Props) {
       onDelete={deleteNote}
       onJump={jumpToNote}
       onAddNote={addManualNote}
+      onCopy={copyNote}
+      onCopyToCanvas={copyNoteToCanvas}
     />
   );
 
@@ -505,21 +548,27 @@ export function UploadFocusMode({ shapeId, onClose }: Props) {
       )}
 
       {pending ? (
-        <button
-          type="button"
+        <div
+          // Keep the selection alive through the click so the captured quote is
+          // never lost mid-action.
           onMouseDown={(e) => e.preventDefault()}
-          onClick={addPendingNote}
           style={{
             position: "fixed",
             top: pending.top,
             left: pending.left,
             transform: "translate(-50%, -100%)",
           }}
-          className="z-[60] flex items-center gap-1.5 rounded-button bg-text-primary px-2.5 py-1.5 text-[12px] font-medium text-app shadow-[var(--shadow-floating)]"
+          className="z-[60] flex items-center gap-0.5 rounded-button bg-text-primary p-1 text-app shadow-[var(--shadow-floating)]"
         >
-          <Plus className="h-3.5 w-3.5" aria-hidden />
-          Add to notes
-        </button>
+          <SelectionAction icon={Plus} label="Add to notes" onClick={addPendingNote} />
+          <span className="mx-0.5 h-4 w-px bg-app/20" aria-hidden />
+          <SelectionAction icon={Copy} label="Copy" onClick={copyPending} />
+          <SelectionAction
+            icon={SquarePlus}
+            label="Copy to canvas"
+            onClick={copyPendingToCanvas}
+          />
+        </div>
       ) : null}
     </div>
   );
@@ -528,4 +577,35 @@ export function UploadFocusMode({ shapeId, onClose }: Props) {
     return overlay;
   }
   return createPortal(overlay, document.body);
+}
+
+/** A note's copyable text: its quote plus any comment. */
+function noteText(note: Note): string {
+  return [note.quote, note.comment]
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** One labeled button in the floating text-selection action box. */
+function SelectionAction({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      className="flex items-center gap-1.5 rounded-button px-2 py-1 text-[12px] font-medium text-app transition-colors duration-100 hover:bg-app/15"
+    >
+      <Icon className="h-3.5 w-3.5" aria-hidden />
+      {label}
+    </button>
+  );
 }

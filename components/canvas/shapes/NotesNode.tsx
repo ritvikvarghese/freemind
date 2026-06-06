@@ -16,6 +16,7 @@ import { openFocus } from "@/lib/focus/openFocus";
 import type { Note } from "@/lib/notes/types";
 import type { UploadNodeShape } from "./UploadNode";
 import { ConnectHandle } from "./ConnectHandle";
+import { findSlotAroundSource } from "../copyToCanvas";
 
 /**
  * A canvas node that mirrors the reader notes of one source document. It is a
@@ -191,12 +192,15 @@ export function syncNotesNode(
   }
   if (notes.length === 0) return;
 
-  const bounds = editor.getShapePageBounds(sourceId);
+  // Place it just right of the source when that space is free, otherwise the
+  // first clear slot around the source (so it never overlaps a copy-to-canvas
+  // clip that already took the right side).
+  const at = findSlotAroundSource(editor, sourceId, DEFAULT_W, DEFAULT_H);
   editor.createShape<NotesNodeShape>({
     id: createShapeId(),
     type: "canvas-ai-notes",
-    x: bounds ? bounds.maxX + 72 : 0,
-    y: bounds ? bounds.y : 0,
+    x: at.x,
+    y: at.y,
     props: { w: DEFAULT_W, h: DEFAULT_H, sourceId, title, notes },
   });
 }

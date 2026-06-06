@@ -10,6 +10,7 @@ import { closeFocus, useFocusShapeId } from "@/lib/focus/openFocus";
 import { ApiKeyPanel } from "@/components/settings/ApiKeyPanel";
 import { ChatDock } from "./chat/ChatDock";
 import { ChatsMenu } from "./chat/ChatsMenu";
+import { ConnectDots } from "./overlay/ConnectDots";
 import { useBoardKey } from "./BoardContext";
 import { closeChat, useOpenChatId } from "@/lib/chat/openChat";
 import { useCanvasChat } from "@/lib/storage/canvasChats";
@@ -33,6 +34,7 @@ export function CanvasOverlay() {
   return (
     <>
       <EmptyState />
+      <ConnectDots />
       <MinimalToolbar />
       <FloatingToolbar />
       <ApiKeyPanel />

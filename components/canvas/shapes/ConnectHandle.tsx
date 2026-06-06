@@ -1,6 +1,12 @@
 "use client";
 
-import { useEditor, useValue, type TLShape, type TLShapeId } from "tldraw";
+import {
+  useEditor,
+  useValue,
+  type Editor,
+  type TLShape,
+  type TLShapeId,
+} from "tldraw";
 import { useBoardKey } from "../BoardContext";
 import { addConnector, setDrag, useDrag } from "@/lib/storage/connectors";
 
@@ -13,6 +19,61 @@ const CONNECTABLE = new Set([
   "text",
   "note",
 ]);
+
+/** Title shown on a connect dot. */
+export const CONNECT_DOT_TITLE = "Drag to another node to connect";
+
+/** Shared look of a connect dot (the draggable port). Callers layer on the
+ *  positioning (absolute inside a card vs fixed in the overlay) and z-index. */
+export const CONNECT_DOT_STYLE: React.CSSProperties = {
+  width: 13,
+  height: 13,
+  borderRadius: "50%",
+  background: "var(--color-accent)",
+  border: "2px solid var(--color-elevated)",
+  cursor: "crosshair",
+  pointerEvents: "all",
+};
+
+/**
+ * Begin a connector drag from `fromId` at a screen (client) point. Tracks the
+ * pointer until release, then connects to whatever connectable shape it lands
+ * on. Shared by the in-shape ConnectHandle (card nodes) and the ConnectDots
+ * overlay (native text / sticky-note shapes, which can't host the handle).
+ */
+export function startConnectDrag(
+  editor: Editor,
+  boardKey: string,
+  fromId: TLShapeId,
+  clientX: number,
+  clientY: number,
+): void {
+  const toPage = (cx: number, cy: number) =>
+    editor.screenToPage({ x: cx, y: cy });
+
+  const start = toPage(clientX, clientY);
+  setDrag({ fromId, toX: start.x, toY: start.y });
+
+  const onMove = (ev: PointerEvent) => {
+    const p = toPage(ev.clientX, ev.clientY);
+    setDrag({ fromId, toX: p.x, toY: p.y });
+  };
+  const onUp = (ev: PointerEvent) => {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    setDrag(null);
+    const p = toPage(ev.clientX, ev.clientY);
+    const target = editor.getShapeAtPoint(p, {
+      hitInside: true,
+      filter: (s: TLShape) => CONNECTABLE.has(s.type),
+    });
+    if (target && target.id !== fromId) {
+      addConnector(boardKey, fromId, target.id);
+    }
+  };
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+}
 
 /**
  * Grab dots on a node's left and right edges. Drag one onto another node to
@@ -38,50 +99,19 @@ export function ConnectHandle({ shapeId }: { shapeId: TLShapeId }) {
     e.stopPropagation();
     e.preventDefault();
     if (!boardKey) return;
-
-    const toPage = (clientX: number, clientY: number) =>
-      editor.screenToPage({ x: clientX, y: clientY });
-
-    const start = toPage(e.clientX, e.clientY);
-    setDrag({ fromId: shapeId, toX: start.x, toY: start.y });
-
-    const onMove = (ev: PointerEvent) => {
-      const p = toPage(ev.clientX, ev.clientY);
-      setDrag({ fromId: shapeId, toX: p.x, toY: p.y });
-    };
-    const onUp = (ev: PointerEvent) => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      setDrag(null);
-      const p = toPage(ev.clientX, ev.clientY);
-      const target = editor.getShapeAtPoint(p, {
-        hitInside: true,
-        filter: (s: TLShape) => CONNECTABLE.has(s.type),
-      });
-      if (target && target.id !== shapeId) {
-        addConnector(boardKey, shapeId, target.id);
-      }
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    startConnectDrag(editor, boardKey, shapeId, e.clientX, e.clientY);
   };
 
   const dot = (side: "left" | "right") => (
     <div
-      title="Drag to another node to connect"
+      title={CONNECT_DOT_TITLE}
       onPointerDown={startDrag}
       style={{
+        ...CONNECT_DOT_STYLE,
         position: "absolute",
         top: "50%",
         [side]: 3,
         transform: "translateY(-50%)",
-        width: 13,
-        height: 13,
-        borderRadius: "50%",
-        background: "var(--color-accent)",
-        border: "2px solid var(--color-elevated)",
-        cursor: "crosshair",
-        pointerEvents: "all",
         opacity: isDragSource ? 1 : 0.85,
         zIndex: 2,
       }}

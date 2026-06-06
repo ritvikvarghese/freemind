@@ -401,9 +401,6 @@ function FolderRow({
             <span className="flex-1 truncate text-[14px] text-text-primary">
               {folder.name}
             </span>
-            <span className="shrink-0 text-[11px] text-text-tertiary tabular-nums">
-              {childCount}
-            </span>
           </button>
         )}
         {!isSubfolder ? (
@@ -435,6 +432,9 @@ function FolderRow({
         >
           <Trash2 className="h-3.5 w-3.5" aria-hidden />
         </button>
+        <span className="shrink-0 w-14 pr-4 text-right text-[11px] text-text-tertiary tabular-nums">
+          {childCount}
+        </span>
       </div>
 
       {!collapsed ? (
@@ -646,9 +646,6 @@ function BoardRow({
           <span className="flex-1 text-[14px] text-text-primary truncate">
             {board.title}
           </span>
-          <span className="text-[11px] text-text-tertiary tabular-nums shrink-0">
-            {formatCreatedAt(board.createdAt)}
-          </span>
         </Link>
         <button
           type="button"
@@ -668,6 +665,9 @@ function BoardRow({
         >
           <Trash2 className="h-3.5 w-3.5" aria-hidden />
         </button>
+        <span className="shrink-0 w-14 pr-4 text-right text-[11px] text-text-tertiary tabular-nums">
+          {formatCreatedAt(board.createdAt)}
+        </span>
       </div>
     </li>
   );

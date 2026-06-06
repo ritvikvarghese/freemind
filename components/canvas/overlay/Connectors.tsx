@@ -9,6 +9,7 @@ import {
   useConnectors,
   useDrag,
 } from "@/lib/storage/connectors";
+import { edgePointToward, edgeToEdge } from "@/lib/canvas/lineEndpoints";
 
 /**
  * Manual, visual-only connectors. Lives in the `Background` slot (below shapes)
@@ -49,10 +50,10 @@ export function Connectors() {
         const a = editor.getShapePageBounds(c.fromId as TLShapeId);
         const b = editor.getShapePageBounds(c.toId as TLShapeId);
         if (!a || !b) continue; // orphaned endpoint — skip silently
-        const x1 = a.x + a.w / 2;
-        const y1 = a.y + a.h / 2;
-        const x2 = b.x + b.w / 2;
-        const y2 = b.y + b.h / 2;
+        // Clip to each shape's edge so the line never crosses a shape (matters
+        // for transparent text shapes; cards look identical since the line was
+        // hidden under them anyway).
+        const { x1, y1, x2, y2 } = edgeToEdge(a, b);
         out.push({ id: c.id, x1, y1, x2, y2, mx: (x1 + x2) / 2, my: (y1 + y2) / 2 });
       }
       return out;
@@ -66,12 +67,9 @@ export function Connectors() {
       if (!drag) return null;
       const a = editor.getShapePageBounds(drag.fromId as TLShapeId);
       if (!a) return null;
-      return {
-        x1: a.x + a.w / 2,
-        y1: a.y + a.h / 2,
-        x2: drag.toX,
-        y2: drag.toY,
-      };
+      // Leave from the source shape's edge toward the live pointer.
+      const p = edgePointToward(a, drag.toX, drag.toY);
+      return { x1: p.x, y1: p.y, x2: drag.toX, y2: drag.toY };
     },
     [editor, drag],
   );

@@ -1,6 +1,5 @@
 "use client";
 
-import { createPortal } from "react-dom";
 import { useEditor, useValue, type TLShapeId } from "tldraw";
 import { useBoardKey } from "../BoardContext";
 import { useDrag } from "@/lib/storage/connectors";
@@ -21,11 +20,16 @@ const NATIVE = new Set(["text", "note"]);
 const INSET = 7;
 
 /**
- * Connect dots for native text shapes and sticky notes. Rendered in screen
- * space (portaled to body so position:fixed is truly viewport-relative) at the
- * left/right edges of the hovered shape — or, mid-drag, the shape being dragged
- * from. Reuses the card ConnectHandle's drag logic; the drag line, drop target,
- * and connector rendering already handle native shapes.
+ * Connect dots for native text shapes and sticky notes. Rendered (screen-space,
+ * position:fixed) at the left/right edges of the hovered shape — or, mid-drag,
+ * the shape being dragged from. Reuses the card ConnectHandle's drag logic; the
+ * drag line, drop target, and connector rendering already handle native shapes.
+ *
+ * Rendered inline in this overlay (NOT portaled to body) so the side panels
+ * occlude the dots exactly like they occlude the in-shape handle on doc/image
+ * cards — a body portal would paint the dots OVER the chat dock / sidebar. The
+ * slot's other children (toolbar, chat dock) prove position:fixed is already
+ * viewport-relative here. A z-index below the panels keeps them tucked under.
  */
 export function ConnectDots() {
   const editor = useEditor();
@@ -68,9 +72,8 @@ export function ConnectDots() {
   );
 
   if (!boardKey || dots.length === 0) return null;
-  if (typeof document === "undefined" || !document.body) return null;
 
-  return createPortal(
+  return (
     <>
       {dots.map((d) => (
         <div
@@ -88,11 +91,12 @@ export function ConnectDots() {
             left: d.x,
             top: d.y,
             transform: "translate(-50%, -50%)",
-            zIndex: 40,
+            // Below the slot's panels (z-30: toolbar, chat dock) and the
+            // sidebar (z-600) so they occlude the dots; still above the canvas.
+            zIndex: 20,
           }}
         />
       ))}
-    </>,
-    document.body,
+    </>
   );
 }

@@ -124,6 +124,15 @@ body {
   text-shadow: none;
 }
 
+/* tldraw menus / submenus (e.g. the "Duplicate to" canvas list) already have
+   `overflow-y: auto`, but tldraw only caps their height (`max-height: 70vh`)
+   under `@media (max-height: 600px)`. On a normal-height desktop the cap never
+   applies, so a long list grows past the viewport with no way to scroll. Cap it
+   always so any over-tall menu scrolls. */
+.tlui-menu {
+  max-height: 70vh;
+}
+
 /* Focus mode in light theme: white "desk" backdrop, unified cream "paper"
    for the header bar + editor surface. Dark mode keeps the default tokens
    (subtle bg-elevated vs bg-app contrast). Specificity is high enough to
@@ -388,17 +397,34 @@ body {
   background-color: color-mix(in srgb, #f5c842 35%, transparent);
 }
 
-/* Tiptap highlight mark (the Highlighter button in the bubble toolbar). Classic
-   yellow marker, dark text in both themes since the fill is light either way. */
+/* Tiptap highlight mark (the Highlighter button in the bubble toolbar). Match
+   the canvas (tldraw) highlight fill exactly so focus mode and canvas look
+   identical: tldraw's --tl-color-text-highlight is hsl(52,100%,41%) in dark and
+   hsl(52,100%,50%) in light. Dark text in both themes since the fill is gold. */
 .canvas-ai-prose mark,
 .tl-rich-text mark.tl-highlight,
 .ProseMirror mark {
-  background-color: #fde68a;
+  background-color: hsl(52, 100%, 41%);
   color: #1a1a1a;
   border-radius: 2px;
   padding: 0 1px;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
+}
+:root[data-theme="light"] .canvas-ai-prose mark,
+:root[data-theme="light"] .ProseMirror mark {
+  background-color: hsl(52, 100%, 50%);
+}
+/* Force the dark ink onto anything nested INSIDE a highlight too — bold, italic,
+   or link marks carry their own color, so highlighted+bold text was keeping the
+   light dark-mode ink and going unreadable on the yellow fill. The fill is light
+   in both themes, so dark text is always right; !important beats the nested
+   mark/link color rules. */
+.canvas-ai-prose mark,
+.canvas-ai-prose mark *,
+.ProseMirror mark,
+.ProseMirror mark * {
+  color: #1a1a1a !important;
 }
 
 /* Phase 3: diff decorations for AI-proposed edits. */

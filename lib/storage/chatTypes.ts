@@ -56,6 +56,11 @@ export type ChatMessage = {
    *  of inline "> " markdown. The model still receives the quote via the wire
    *  message's <quote>/<selection> block. Optional + additive (no migration). */
   quote?: string;
+  /** When this assistant message announces a document the chat just created
+   *  (Deepsynth / Deepsearch / Create artifact), the new DocumentNode's id. The
+   *  canvas chat renders it as a live status card (Researching… -> Created),
+   *  clickable to open the doc. Optional + additive (no migration). */
+  docRef?: { docId: string };
   createdAt: number;
   error?: string;
 };

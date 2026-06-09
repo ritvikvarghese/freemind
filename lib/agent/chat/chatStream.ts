@@ -35,9 +35,9 @@ export function buildMediaPrefix(
     blocks.push(pdfBlock(s.pdf!.data));
   });
   const last = blocks[blocks.length - 1] as ContentBlockParam & {
-    cache_control?: { type: "ephemeral" };
+    cache_control?: { type: "ephemeral"; ttl?: "1h" };
   };
-  last.cache_control = { type: "ephemeral" };
+  last.cache_control = { type: "ephemeral", ttl: "1h" };
 
   return [
     { role: "user", content: blocks },

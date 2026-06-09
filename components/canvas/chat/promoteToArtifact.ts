@@ -3,6 +3,7 @@ import type { CanvasChatRecord } from "@/lib/storage/canvasChatTypes";
 import type { ChatMessage } from "@/lib/storage/chatTypes";
 import { isSourceShape, type SourceShape } from "@/lib/agent/buildContext";
 import { launchResearch } from "@/components/canvas/prompt/launchResearch";
+import { markPulse } from "@/lib/canvas/pulse";
 
 /**
  * Turn a canvas chat into a DocumentNode artifact. Reuses the existing
@@ -41,5 +42,8 @@ export function promoteToArtifact(
     ? `${head}\n\nBase it on the conversation below. Synthesize it into a standalone document — do not refer to "the conversation" or "the chat".\n\n<conversation>\n${transcript}\n</conversation>`
     : head;
 
-  return launchResearch(editor, sources, prompt, chat.mode);
+  const docId = launchResearch(editor, sources, prompt, chat.mode);
+  // One-shot pulse: the new artifact lights up from each of its sources.
+  markPulse(`d:${docId}`);
+  return docId;
 }

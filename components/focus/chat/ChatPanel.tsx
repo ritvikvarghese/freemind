@@ -39,7 +39,7 @@ import {
   useProposals,
   clearProposals,
 } from "@/lib/agent/chat/proposalRegistry";
-import { applyProposalToEditor, computeBlockedIds, isProposalResolvable } from "@/components/focus/editor/applyProposal";
+import { applyProposalToEditor, computeBlockedIds, isProposalApplied, isProposalResolvable } from "@/components/focus/editor/applyProposal";
 import { refreshDiffDecorations } from "@/components/focus/editor/diffDecorations";
 import { ChatThread, type StreamingToolUse } from "./ChatThread";
 import { ChatComposer, type ChatComposerHandle } from "./ChatComposer";
@@ -126,7 +126,10 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
         continue;
       }
       if (!isProposalResolvable(markdown, p)) {
-        m.set(p.id, "stale");
+        // Can't find the original text. Distinguish "already applied" (the
+        // replacement is in the doc — treat as accepted) from "truly moved"
+        // (stale — offer redo). Without this, a successful edit reads as stale.
+        m.set(p.id, isProposalApplied(markdown, p) ? "accepted" : "stale");
         continue;
       }
       m.set(p.id, blocked.has(p.id) ? "blocked" : "pending");
@@ -220,9 +223,25 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
       setStreamingToolUses([]);
 
       const assembledProposals: Proposal[] = [];
+      // Tool calls whose JSON couldn't be parsed into a proposal (truncated by
+      // the token ceiling, or missing a required field). Surfaced in onDone so
+      // the turn doesn't look like it silently did nothing.
+      let failedToolCalls = 0;
+
+      // A+B: feed the model the LIVE editor document captured at send time, and
+      // freeze that snapshot for this whole reply. The model then anchors
+      // against the exact string the apply layer (applyProposalToEditor /
+      // liveStatus, both `editor.getMarkdown()`) will resolve against, so edits
+      // stop going stale. The user can keep editing while the reply streams; the
+      // next message captures a fresh snapshot. Redo flows through here too, so
+      // it re-reads the current doc instead of looping on a stale copy.
+      const liveDoc = {
+        markdown: editor?.getMarkdown() ?? doc.markdown,
+        sources: doc.sources,
+      };
 
       abortRef.current = runChat({
-        doc,
+        doc: liveDoc,
         history,
         userMessage: wireMessage,
         // Freeform allows light web; Deepsearch allows heavy web. Edit tools
@@ -255,15 +274,25 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
         onToolUseEnd: (id, name, finalJson) => {
           setStreamingToolUses((cur) => cur.filter((t) => t.id !== id));
           const proposal = buildProposalFromTool(id, name, finalJson);
-          if (!proposal) return;
+          if (!proposal) {
+            failedToolCalls += 1;
+            return;
+          }
           assembledProposals.push(proposal);
           addProposal(chatId, proposal);
         },
         onDone: (finalText, webSearches) => {
+          // If some tool calls failed to parse, tell the user instead of
+          // dropping them silently (the proposals never showed up as cards).
+          const failNote =
+            failedToolCalls > 0
+              ? `I tried to make ${failedToolCalls === 1 ? "an edit" : `${failedToolCalls} edits`} but could not format ${failedToolCalls === 1 ? "it" : "them"} cleanly. Ask me to try again.`
+              : "";
+          const text = [finalText, failNote].filter(Boolean).join("\n\n");
           const assistantMsg: ChatMessage = {
             id: crypto.randomUUID(),
             role: "assistant",
-            text: finalText,
+            text,
             proposals: assembledProposals.length ? assembledProposals : undefined,
             createdAt: Date.now(),
             ...(webSearches.length ? { webSearches } : {}),
@@ -294,7 +323,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
         },
       });
     },
-    [chatId, documentId, boardPersistenceKey, doc, messages, mode],
+    [chatId, documentId, boardPersistenceKey, doc, editor, messages, mode],
   );
 
   const stop = useCallback(() => {
@@ -315,7 +344,11 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
       const live = liveStatus.get(proposal.id) ?? proposal.status;
       if (live !== "pending") return;
       const result = applyProposalToEditor(editor, proposal);
-      if (result.ok) {
+      // Succeeded, or the change was already in the doc (e.g. applied moments
+      // ago) — either way it's accepted, not stale.
+      const accepted =
+        result.ok || isProposalApplied(editor.getMarkdown(), proposal);
+      if (accepted) {
         updateProposal(chatId, proposal.id, { status: "accepted" });
         // Reflect in persisted history.
         setMessages((cur) =>

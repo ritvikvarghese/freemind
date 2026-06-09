@@ -60,6 +60,10 @@ export type DocumentNodeShape = TLBaseShape<
     title: string;
     markdown: string;
     status: "researching" | "streaming" | "done" | "stopped" | "error";
+    /** The model's streamed chain-of-thought (extended thinking), shown as a
+     * collapsible "Thinking" section while the document is generated. Empty for
+     * hand-made docs and for runs without thinking enabled. */
+    thinking: string;
     userPrompt: string;
     sourceIds: string[];
     sourceSnapshots: { id: string; len: number; head: string }[];
@@ -93,6 +97,7 @@ export class DocumentNodeUtil extends BaseBoxShapeUtil<DocumentNodeShape> {
       "stopped",
       "error",
     ),
+    thinking: T.string,
     userPrompt: T.string,
     sourceIds: T.arrayOf(T.string),
     sourceSnapshots: T.arrayOf(
@@ -177,6 +182,14 @@ export class DocumentNodeUtil extends BaseBoxShapeUtil<DocumentNodeShape> {
         },
         down: "retired",
       },
+      {
+        id: "com.tldraw.shape.canvas-ai-document/4",
+        up: (props) => {
+          const p = props as { thinking?: string };
+          if (typeof p.thinking !== "string") p.thinking = "";
+        },
+        down: "retired",
+      },
     ],
   });
 
@@ -199,6 +212,7 @@ export class DocumentNodeUtil extends BaseBoxShapeUtil<DocumentNodeShape> {
       title: "",
       markdown: "",
       status: "researching",
+      thinking: "",
       userPrompt: "",
       sourceIds: [],
       sourceSnapshots: [],
@@ -234,7 +248,7 @@ export class DocumentNodeUtil extends BaseBoxShapeUtil<DocumentNodeShape> {
 
 function DocumentNodeBody({ shape }: { shape: DocumentNodeShape }) {
   const editor = useEditor();
-  const { status, title, markdown, errorMessage, sourcesUsed, sourceSnapshots } =
+  const { status, title, markdown, thinking, errorMessage, sourcesUsed, sourceSnapshots } =
     shape.props;
   const isInProgress = status === "researching" || status === "streaming";
   const sourceCount = useMemo(
@@ -335,6 +349,17 @@ function DocumentNodeBody({ shape }: { shape: DocumentNodeShape }) {
             <div className="h-full overflow-hidden text-[13px] leading-relaxed text-text-primary canvas-ai-doc-preview">
               {markdown ? (
                 <MarkdownView>{markdown}</MarkdownView>
+              ) : thinking ? (
+                // Live chain-of-thought before the document text starts.
+                <div className="space-y-1.5">
+                  <span className="inline-flex items-center gap-2 text-[11px] uppercase tracking-wide text-text-tertiary">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>Thinking</span>
+                  </span>
+                  <div className="whitespace-pre-wrap text-[12px] leading-relaxed italic text-text-tertiary">
+                    {thinking}
+                  </div>
+                </div>
               ) : isInProgress ? (
                 <span className="inline-flex items-center gap-2 text-text-tertiary">
                   <Loader2 className="h-3 w-3 animate-spin" />

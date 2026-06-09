@@ -243,6 +243,18 @@ export function buildContext(
     content.push(pdfBlock(shape.props.pdfData));
   });
 
+  // Cache the source prefix (context text + any image / PDF blocks). The user
+  // prompt is the only volatile part, so it stays LAST and unmarked: a retry or
+  // sibling run with the same selection reuses everything up to here instead of
+  // re-billing the whole payload. Mark the last source block, then append the
+  // prompt. (Below the model's min cacheable prefix this is a silent no-op.)
+  const lastSource = content[content.length - 1] as ContentBlockParam & {
+    cache_control?: { type: "ephemeral"; ttl?: "5m" };
+  };
+  // 5m TTL (cheaper 1.25x write): research is one-shot or a fast retry, so a
+  // short window covers the reuse case without the 1h write premium.
+  lastSource.cache_control = { type: "ephemeral", ttl: "5m" };
+
   content.push({ type: "text", text: `User prompt:\n${userPrompt.trim()}` });
 
   return { content, sources };

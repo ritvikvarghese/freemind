@@ -21,6 +21,7 @@ import {
   MonitorPlay,
   MessageSquare,
   ExternalLink,
+  Loader2,
 } from "lucide-react";
 import { MarkdownView } from "@/components/MarkdownView";
 import type {
@@ -378,6 +379,11 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
         }}
       >
         <ScrollColumn>
+          <ThinkingPanel
+            key={isStreaming ? "thinking-live" : "thinking-done"}
+            thinking={shape?.props.thinking ?? ""}
+            streaming={isStreaming}
+          />
           {isStreaming ? (
             <StreamingView markdown={markdown} />
           ) : (
@@ -578,6 +584,65 @@ function ScrollColumn({ children }: { children: React.ReactNode }) {
   return (
     <div className="canvas-ai-focus-paper flex-1 overflow-auto bg-app">
       <div className="mx-auto w-full max-w-[760px] px-6">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Collapsible chain-of-thought, shown above the document content. Auto-expands
+ * while the model is working (and follows the stream to the bottom), collapses
+ * once the document is done — like Claude Deep Research. Hidden when empty.
+ */
+function ThinkingPanel({
+  thinking,
+  streaming,
+}: {
+  thinking: string;
+  streaming: boolean;
+}) {
+  // Initial open state follows `streaming`; the parent remounts this panel
+  // (key on streaming) when the run finishes, so it collapses on done while
+  // still letting the user toggle it within a phase.
+  const [open, setOpen] = useState(streaming);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  // Follow the stream to the bottom as new thinking arrives — but only if the
+  // reader is already near the bottom, so scrolling up to re-read isn't yanked.
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el || !open || !streaming) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    if (nearBottom) el.scrollTop = el.scrollHeight;
+  }, [thinking, open, streaming]);
+
+  if (!thinking.trim()) return null;
+
+  return (
+    <div className="mb-4 mt-2 overflow-hidden rounded-button border border-hairline bg-elevated">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary"
+      >
+        {streaming ? (
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+        ) : null}
+        <span className="font-medium">{streaming ? "Thinking…" : "Thinking"}</span>
+        <ChevronDown
+          className={
+            "ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-150 " +
+            (open ? "" : "-rotate-90")
+          }
+          aria-hidden
+        />
+      </button>
+      {open ? (
+        <div
+          ref={bodyRef}
+          className="max-h-[300px] overflow-auto border-t border-hairline px-3 py-2.5 whitespace-pre-wrap text-[12.5px] leading-relaxed italic text-text-tertiary"
+        >
+          {thinking}
+        </div>
+      ) : null}
     </div>
   );
 }

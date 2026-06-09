@@ -1,11 +1,17 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useEditor, useValue, type TLShapeId } from "tldraw";
+import { FileText, Loader2 } from "lucide-react";
 import { MarkdownView } from "@/components/MarkdownView";
 import { installChatCopyGuard } from "@/lib/clipboard/chatCopyGuard";
 import type { ChatMessage, Proposal } from "@/lib/storage/chatTypes";
-import type { SourceSnapshot } from "@/components/canvas/shapes/DocumentNode";
+import type {
+  DocumentNodeShape,
+  SourceSnapshot,
+} from "@/components/canvas/shapes/DocumentNode";
 import { SourceCard } from "@/components/canvas/chat/SourceCard";
+import { openFocus } from "@/lib/focus/openFocus";
 import { ProposalCard } from "./ProposalCard";
 import { ToolUseStreamingCard } from "./ToolUseStreamingCard";
 
@@ -164,6 +170,7 @@ function MessageBlock({
           <MarkdownView>{message.text}</MarkdownView>
         </div>
       ) : null}
+      {message.docRef ? <DocRefCard docId={message.docRef.docId} /> : null}
       {message.proposals?.map((p) => {
         const live = liveStatus.get(p.id) ?? p.status;
         const proposal = { ...p, status: live } as Proposal;
@@ -186,5 +193,64 @@ function MessageBlock({
         </div>
       ) : null}
     </div>
+  );
+}
+
+const DOC_STATUS_LABEL: Record<DocumentNodeShape["props"]["status"], string> = {
+  researching: "Researching…",
+  streaming: "Writing…",
+  done: "Created",
+  stopped: "Stopped",
+  error: "Couldn’t finish",
+};
+
+/**
+ * Live status card for a document the chat just created (Deepsynth / Deepsearch
+ * / Create artifact). Reads the DocumentNode's status + title reactively and
+ * opens it on click, so the chat shows what's happening instead of a silent doc
+ * appearing on the canvas.
+ */
+function DocRefCard({ docId }: { docId: string }) {
+  const editor = useEditor();
+  const id = docId as TLShapeId;
+  const doc = useValue(
+    "chat-doc-ref",
+    () => {
+      const s = editor.getShape(id) as DocumentNodeShape | undefined;
+      if (!s || s.type !== "canvas-ai-document") return null;
+      return { status: s.props.status, title: s.props.title };
+    },
+    [editor, id],
+  );
+
+  if (!doc) {
+    return (
+      <div className="rounded-button border border-hairline bg-elevated px-3 py-2 text-[12px] text-text-tertiary">
+        Document removed.
+      </div>
+    );
+  }
+
+  const inProgress = doc.status === "researching" || doc.status === "streaming";
+
+  return (
+    <button
+      type="button"
+      onClick={() => openFocus(id)}
+      className="flex w-full items-center gap-2.5 rounded-button border border-hairline bg-elevated px-3 py-2 text-left hover:border-hairline-hover"
+    >
+      <FileText className="h-4 w-4 shrink-0 text-text-tertiary" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[13px] font-medium text-text-primary">
+          {doc.title || "Untitled document"}
+        </div>
+        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-text-secondary">
+          {inProgress ? (
+            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+          ) : null}
+          {DOC_STATUS_LABEL[doc.status]}
+        </div>
+      </div>
+    </button>
   );
 }

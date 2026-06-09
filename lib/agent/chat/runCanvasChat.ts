@@ -8,12 +8,15 @@ import type { ChatMessage } from "@/lib/storage/chatTypes";
 import { getApiKey } from "@/lib/storage/apiKey";
 import { buildMediaPrefix, toApiMessages, describeError } from "./chatStream";
 import { chatSystemPromptFor, chatWebSearchMaxUses } from "./chatModes";
+import { logUsage } from "@/lib/agent/cacheDebug";
 
 const MODEL =
   (typeof process !== "undefined" && process.env.NEXT_PUBLIC_CLAUDE_CHAT_MODEL) ||
   "claude-sonnet-4-6";
 
-const MAX_TOKENS = 8_000;
+// Output ceiling (not a target). Generous so create_artifact can write a
+// full-length document in one turn without truncating. See runChat.ts.
+const MAX_TOKENS = 16_000;
 
 export type CreateArtifactRequest = { title?: string; focus?: string };
 
@@ -72,7 +75,7 @@ export function runCanvasChat(input: RunCanvasChatInput): AbortController {
     {
       type: "text" as const,
       text: chatSystemPromptFor(input.mode, input.sources),
-      cache_control: { type: "ephemeral" as const },
+      cache_control: { type: "ephemeral" as const, ttl: "1h" as const },
     },
   ];
 
@@ -143,7 +146,8 @@ export function runCanvasChat(input: RunCanvasChatInput): AbortController {
         }
       });
 
-      await stream.finalMessage();
+      const final = await stream.finalMessage();
+      logUsage("canvasChat", final.usage);
       input.onDone(finalText, webSearches);
     } catch (err) {
       if (err instanceof APIUserAbortError || controller.signal.aborted) {

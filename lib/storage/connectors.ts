@@ -3,6 +3,7 @@
 import { openDB, type IDBPDatabase } from "idb";
 import { useSyncExternalStore } from "react";
 import { reportStorageError } from "./quotaToast";
+import { markPulse } from "@/lib/canvas/pulse";
 
 /**
  * Manual, visual-only connectors between two nodes — a thinking aid, not an AI
@@ -101,7 +102,9 @@ export function addConnector(key: string, fromId: string, toId: string): void {
       (c.fromId === toId && c.toId === fromId),
   );
   if (exists) return;
-  cache.set(key, [...list, { id: crypto.randomUUID(), fromId, toId }]);
+  const id = crypto.randomUUID();
+  cache.set(key, [...list, { id, fromId, toId }]);
+  markPulse(`c:${id}`); // one-shot pulse the moment the connection is made
   notify();
   void persist(key);
 }

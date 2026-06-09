@@ -5,6 +5,7 @@ import Anthropic, {
   AuthenticationError,
 } from "@anthropic-ai/sdk";
 import { getApiKey } from "@/lib/storage/apiKey";
+import { logUsage } from "@/lib/agent/cacheDebug";
 
 // Sonnet for all extraction — never Haiku (quality bar for OCR/transcription).
 const OCR_MODEL =
@@ -96,6 +97,7 @@ export async function ocrImage(
         },
       ],
     });
+    logUsage("ocr", msg.usage);
     const text = collectText(msg.content);
     if (looksLikeRefusal(text)) {
       return { ok: false, error: "The model declined to transcribe this image." };

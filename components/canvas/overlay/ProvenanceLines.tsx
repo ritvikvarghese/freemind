@@ -18,8 +18,13 @@ export function ProvenanceLines() {
   const edges = useValue(
     "canvas-ai-provenance-edges",
     () => {
-      const selectedIds = new Set(editor.getSelectedShapeIds());
-      if (selectedIds.size === 0) return [];
+      // Active = selected OR hovered, matching the connector-pulse overlay so a
+      // hovered node always shows its lines (otherwise the pulse pills ride an
+      // invisible line and read as floating stubs).
+      const activeIds = new Set(editor.getSelectedShapeIds());
+      const hovered = editor.getHoveredShapeId();
+      if (hovered) activeIds.add(hovered);
+      if (activeIds.size === 0) return [];
       const out: {
         key: string;
         sx: number;
@@ -28,10 +33,10 @@ export function ProvenanceLines() {
         dy: number;
       }[] = [];
       // Edges are undirected for highlighting: draw any provenance link where
-      // EITHER end is selected, so selecting a source reveals the docs/notes
-      // built from it just as selecting a doc reveals its sources.
+      // EITHER end is active, so selecting/hovering a source reveals the
+      // docs/notes built from it just as a doc reveals its sources.
       for (const e of getProvenanceEdges(editor)) {
-        if (!selectedIds.has(e.from) && !selectedIds.has(e.to)) continue;
+        if (!activeIds.has(e.from) && !activeIds.has(e.to)) continue;
         const docBounds = editor.getShapePageBounds(e.from);
         const srcBounds = editor.getShapePageBounds(e.to);
         if (!docBounds || !srcBounds) continue;

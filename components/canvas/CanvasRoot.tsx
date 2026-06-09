@@ -33,6 +33,7 @@ import { BoardProvider } from "./BoardContext";
 import { ingestFiles } from "./ingestFiles";
 import { ingestImages } from "./ingestImages";
 import { ingestLink } from "./ingestLink";
+import { findClearRegion } from "./copyToCanvas";
 import { useTheme } from "@/lib/storage/theme";
 import { takeShapeTransfers } from "@/lib/storage/shapeTransfers";
 import { restoreFocus } from "@/lib/focus/openFocus";
@@ -204,12 +205,19 @@ export function CanvasRoot({
 
     // Materialize any shapes "duplicated to" this canvas while it was closed.
     // Lay them out in a tidy grid sized to the shapes (a fixed diagonal offset
-    // just piles big documents on top of each other).
+    // just piles big documents on top of each other), then drop that grid into
+    // empty space so it never lands on whatever is already on the board.
     const transfers = takeShapeTransfers(persistenceKey);
     if (transfers.length) {
       const ids = transfers.map(() => createShapeId());
       editor.run(() => {
-        // Create first (off-screen-ish), then measure + place.
+        // Capture existing shapes as obstacles BEFORE creating the batch.
+        const obstacles = editor
+          .getCurrentPageShapes()
+          .map((s) => editor.getShapePageBounds(s.id))
+          .filter((b): b is NonNullable<typeof b> => Boolean(b))
+          .map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h }));
+        // Create at the origin first, then measure + place.
         transfers.forEach((t, i) => {
           editor.createShape({
             id: ids[i],
@@ -228,17 +236,20 @@ export function CanvasRoot({
         const colW = Math.max(...sizes.map((s) => s.w)) + GAP;
         const rowH = Math.max(...sizes.map((s) => s.h)) + GAP;
         const rows = Math.ceil(ids.length / cols);
-        const center = editor.getViewportPageBounds().center;
-        const startX = center.x - (cols * colW - GAP) / 2;
-        const startY = center.y - (rows * rowH - GAP) / 2;
+        const origin = findClearRegion(
+          obstacles,
+          cols * colW - GAP,
+          rows * rowH - GAP,
+          editor.getViewportPageBounds().center,
+        );
         ids.forEach((id, i) => {
           const col = i % cols;
           const row = Math.floor(i / cols);
           editor.updateShape({
             id,
             type: transfers[i].type as TLShapePartial["type"],
-            x: startX + col * colW,
-            y: startY + row * rowH,
+            x: origin.x + col * colW,
+            y: origin.y + row * rowH,
           });
         });
       });

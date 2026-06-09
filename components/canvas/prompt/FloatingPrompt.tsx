@@ -37,13 +37,13 @@ const OPTIONS: { id: PromptSelection; label: string; description: string }[] = [
   {
     id: "freeform",
     label: "Freeform",
-    description: "Does exactly what you ask, in the format you ask for.",
+    description: "Chats with you about your sources, in whatever format you ask.",
   },
   {
     id: "deepsynth",
     label: "Deepsynth",
     description:
-      "Reasons across only your selected sources and gives one clear pick. No web.",
+      "Reasons across only your sources and writes a synthesis document. No web.",
   },
   {
     id: "deepsearch",
@@ -53,8 +53,7 @@ const OPTIONS: { id: PromptSelection; label: string; description: string }[] = [
   {
     id: "create-artifact",
     label: "Create artifact",
-    description:
-      "Turns your sources into a document on the canvas, with no back and forth.",
+    description: "Turns your sources straight into a document, no back and forth.",
   },
 ];
 
@@ -268,10 +267,15 @@ export function FloatingPrompt() {
     if (!canSubmit) return;
     const trimmed = prompt.trim();
     setPrompt("");
-    if (selection === "create-artifact") {
-      launchResearch(editor, selectedSources, trimmed, CREATE_ARTIFACT_DEPTH);
-    } else if (boardKey) {
-      launchCanvasChat(editor, selectedSources, trimmed, selection, boardKey);
+    if (selection === "freeform") {
+      // Freeform is the only conversational mode — open a chat.
+      if (boardKey) launchCanvasChat(editor, selectedSources, trimmed, selection, boardKey);
+    } else {
+      // Deepsynth / Deepsearch / Create artifact all produce a document on the
+      // canvas, differing only in research depth.
+      const depth: AgentMode =
+        selection === "create-artifact" ? CREATE_ARTIFACT_DEPTH : selection;
+      launchResearch(editor, selectedSources, trimmed, depth);
     }
   }
 

@@ -36,12 +36,24 @@ import { promoteToArtifact } from "./promoteToArtifact";
 const EMPTY_STATUS = new Map<string, Proposal["status"]>();
 const noop = () => {};
 
-type ComposerMode = "chat" | "deepsearch" | "create-artifact";
+type ComposerMode = "chat" | "deepsynth" | "deepsearch" | "create-artifact";
 
 const MODE_LABEL: Record<ComposerMode, string> = {
   chat: "Chat",
+  deepsynth: "Deepsynth",
   deepsearch: "Deepsearch",
   "create-artifact": "Create artifact",
+};
+
+// The three modes that write a document on the canvas (vs. "chat", which is
+// conversational). Each maps to the research depth runResearch should use.
+const ARTIFACT_DEPTH: Record<
+  "deepsynth" | "deepsearch" | "create-artifact",
+  AgentMode
+> = {
+  deepsynth: "deepsynth",
+  deepsearch: "deepsearch",
+  "create-artifact": "freeform", // Create artifact = freeform-depth synthesis
 };
 
 // Canvas chat panel width is user-draggable (left edge) and persisted.
@@ -277,7 +289,7 @@ export function ChatDock({ id }: { id: string }) {
   // Explicit promote from the composer's "Create artifact" mode: echo the
   // focus as a user bubble, drop a confirmation, and spawn the document.
   const promoteFromComposer = useCallback(
-    (focus: string | undefined) => {
+    (focus: string | undefined, depth: AgentMode) => {
       if (!session) return;
       const trimmed = focus?.trim() || undefined;
       // Fold any staged attachments into the session so the artifact is written
@@ -305,17 +317,25 @@ export function ChatDock({ id }: { id: string }) {
         createdAt: Date.now(),
         ...(attachmentIds.length ? { attachmentIds } : {}),
       };
+      // Create the document at the chosen depth, then reference it in the chat
+      // so the response is a live status card (see ChatThread docRef), not just
+      // a silent doc on the canvas.
+      const docId = promoteToArtifact(
+        editor,
+        { ...effectiveSession, mode: depth },
+        { focus: trimmed },
+      );
       const note: ChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
-        text: "Created a document on the canvas. It's writing now — open it to read or edit.",
+        text: "",
+        docRef: { docId },
         createdAt: Date.now(),
       };
       const next = [...messages, userEcho, note];
       setMessages(next);
       saveCanvasChatMessages(id, next);
       if (staged.length) clearStagedSources();
-      promoteToArtifact(editor, effectiveSession, { focus: trimmed });
     },
     [editor, id, messages, session, stagedSources],
   );
@@ -323,10 +343,11 @@ export function ChatDock({ id }: { id: string }) {
   const submit = useCallback(() => {
     if (busy) return;
     const text = value.trim();
-    if (composerMode === "create-artifact") {
-      promoteFromComposer(text);
+    if (composerMode !== "chat") {
+      // Deepsynth / Deepsearch / Create artifact all produce a document.
+      promoteFromComposer(text, ARTIFACT_DEPTH[composerMode]);
       setValue("");
-      setComposerMode("chat"); // one-shot
+      setComposerMode("chat"); // one-shot, back to conversational
       setCanvasChatMode(id, resolveTurnMode("chat", startedMode.current));
       return;
     }
@@ -409,8 +430,10 @@ export function ChatDock({ id }: { id: string }) {
     composerMode === "create-artifact"
       ? "What should it focus on? (optional)"
       : composerMode === "deepsearch"
-        ? "Ask — I'll search the web…"
-        : "Ask a follow-up…";
+        ? "What should I research? (writes a document)"
+        : composerMode === "deepsynth"
+          ? "What should I synthesize? (writes a document)"
+          : "Ask a follow-up…";
 
   return (
     <aside
@@ -561,7 +584,9 @@ export function ChatDock({ id }: { id: string }) {
           ) : null}
           {menuOpen ? (
             <div className="absolute bottom-[46px] left-2 z-10 w-[200px] rounded-panel border border-hairline bg-elevated p-1 shadow-[var(--shadow-floating)]">
-              {(["chat", "deepsearch", "create-artifact"] as ComposerMode[]).map(
+              {(
+                ["chat", "deepsynth", "deepsearch", "create-artifact"] as ComposerMode[]
+              ).map(
                 (m, i) => (
                   <div key={m}>
                     {i === 1 ? (

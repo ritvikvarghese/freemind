@@ -49,7 +49,14 @@ Drop things on the canvas to use as sources:
 - Images, which get OCR'd and also passed to the model as pictures.
 - YouTube links, which get turned into transcripts.
 
-Select a few sources, pick a mode, write a prompt, and press Enter. Freeform mode is quick and conversational (Sonnet by default). Deep research mode does the long, structured write-up and can search the web (Opus by default). The result streams into a new document next to whatever you selected, and you can stop it from the document's header if it goes off the rails. You can also chat with the canvas or with any document, and ask it to write findings straight into the doc.
+Select a few sources, pick a mode, write a prompt, and press Enter. There are four modes:
+
+- **Freeform** chats with you about your sources, in whatever format you ask (Sonnet by default).
+- **Deepsynth** reasons across only your sources and writes a synthesis document, no web (Opus by default).
+- **Deepsearch** searches the web and writes a long, cited research document (Opus by default).
+- **Create artifact** turns your sources straight into a document, no back and forth.
+
+Chat is the default, so Freeform opens a side conversation while the other three write a document. Either way the document streams in next to whatever you selected, with the model's thinking shown as it works, and you can stop it from the document's header if it goes off the rails. You can also chat with the canvas or with any document and ask it to write findings straight into the doc.
 
 A few other things that help you think on the canvas:
 
@@ -67,7 +74,7 @@ These are optional and all go in `.env.local`:
 
 - `NEXT_PUBLIC_ANTHROPIC_API_KEY`: your key, if you'd rather not use the in-app panel.
 - `NEXT_PUBLIC_CLAUDE_MODEL`: model for Freeform research. Defaults to `claude-sonnet-4-6`.
-- `NEXT_PUBLIC_CLAUDE_DEEP_MODEL`: model for Deep research mode. Defaults to `claude-opus-4-7`.
+- `NEXT_PUBLIC_CLAUDE_DEEP_MODEL`: model for Deepsynth and Deepsearch. Defaults to `claude-opus-4-7`.
 - `NEXT_PUBLIC_CLAUDE_CHAT_MODEL`: model for canvas and document chat. Defaults to `claude-sonnet-4-6`.
 - `NEXT_PUBLIC_CLAUDE_OCR_MODEL`: model for reading text from images. Defaults to `claude-sonnet-4-6`.
 
@@ -95,7 +102,7 @@ Rough layout:
 - `lib/agent/` has the prompts and the research and chat runners.
 - `lib/storage/` handles boards, the API key, chat history, and connectors.
 
-Two dependencies are pinned on purpose. The Anthropic SDK is held at 0.70.0 because newer versions import `node:fs/promises` and won't bundle for the browser. tldraw and its schema package are both on 5.0.1.
+tldraw and its schema package are both pinned to 5.0.1 on purpose. The Anthropic SDK is on 0.84.0 and is called straight from the browser, so your key never touches a server.
 
 ## License
 

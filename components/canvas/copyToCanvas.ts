@@ -73,6 +73,45 @@ export function findSlotAroundSource(
   return { x: src.maxX + GAP, y: src.maxY + GAP };
 }
 
+/**
+ * Find a clear top-left for a `w` x `h` block near `center`, avoiding every box
+ * in `obstacles`. Used when duplicating shapes onto another canvas: the batch is
+ * laid out as one block which should land in empty space, not on top of whatever
+ * is already on that board. Tries the centered spot first, then spirals outward.
+ */
+export function findClearRegion(
+  obstacles: Box[],
+  w: number,
+  h: number,
+  center: { x: number; y: number },
+): { x: number; y: number } {
+  const fits = (x: number, y: number) =>
+    !obstacles.some((o) => overlaps({ x, y, w, h }, o, GAP * 0.5));
+  const topLeft = (cx: number, cy: number) => ({ x: cx - w / 2, y: cy - h / 2 });
+
+  const centered = topLeft(center.x, center.y);
+  if (fits(centered.x, centered.y)) return centered;
+
+  const step = Math.max(160, GAP * 2);
+  for (let ring = 1; ring <= 40; ring++) {
+    const d = ring * step;
+    for (const [cx, cy] of [
+      [center.x + d, center.y],
+      [center.x - d, center.y],
+      [center.x, center.y + d],
+      [center.x, center.y - d],
+      [center.x + d, center.y + d],
+      [center.x - d, center.y + d],
+      [center.x + d, center.y - d],
+      [center.x - d, center.y - d],
+    ] as const) {
+      const c = topLeft(cx, cy);
+      if (fits(c.x, c.y)) return c;
+    }
+  }
+  return centered; // very crowded board — fall back to the centered spot
+}
+
 function candidateSlots(
   src: { minX: number; minY: number; maxX: number; maxY: number; w: number; h: number },
   w: number,

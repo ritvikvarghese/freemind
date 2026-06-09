@@ -11,12 +11,16 @@ import { getApiKey } from "@/lib/storage/apiKey";
 import { buildChatSystemPrompt } from "./systemPrompt";
 import { CHAT_TOOLS } from "./tools";
 import { buildMediaPrefix, toApiMessages, describeError } from "./chatStream";
+import { logUsage } from "@/lib/agent/cacheDebug";
 
 const MODEL =
   (typeof process !== "undefined" && process.env.NEXT_PUBLIC_CLAUDE_CHAT_MODEL) ||
   "claude-sonnet-4-6";
 
-const MAX_TOKENS = 8_000;
+// Output ceiling (not a target — only spent if the model writes that much).
+// Generous so creating/rewriting a full-length artifact never truncates
+// mid-document. Sonnet 4.6's ceiling is far higher, so 16k is comfortable.
+const MAX_TOKENS = 16_000;
 
 export type WebSearch = { query: string; urls: string[] };
 
@@ -64,7 +68,7 @@ export function runChat(input: RunChatInput): AbortController {
         webSearch: webSearchMaxUses > 0,
         writeToDocDefault: input.webSearchWritesDoc ?? false,
       }),
-      cache_control: { type: "ephemeral" as const },
+      cache_control: { type: "ephemeral" as const, ttl: "1h" as const },
     },
   ];
 
@@ -187,7 +191,8 @@ export function runChat(input: RunChatInput): AbortController {
         }
       });
 
-      await stream.finalMessage();
+      const final = await stream.finalMessage();
+      logUsage("chat", final.usage);
       input.onDone(finalText, webSearches);
     } catch (err) {
       if (err instanceof APIUserAbortError || controller.signal.aborted) {

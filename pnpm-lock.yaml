@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@anthropic-ai/sdk':
-        specifier: 0.70.0
-        version: 0.70.0(zod@4.4.3)
+        specifier: 0.84.0
+        version: 0.84.0(zod@4.4.3)
       '@tiptap/core':
         specifier: ^3.23.6
         version: 3.23.6(@tiptap/pm@3.23.6)
@@ -124,8 +124,8 @@ packages:
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
     engines: {node: '>=10'}
 
-  '@anthropic-ai/sdk@0.70.0':
-    resolution: {integrity: sha512-FYIuhF/lSCa+pgtaMGgsTF14aOIiWtBnu3azXITDOELv6yxsDNJwcjjt+Zr7vwyuTUjZJE/YL7s9m5r1jXkoeQ==}
+  '@anthropic-ai/sdk@0.84.0':
+    resolution: {integrity: sha512-vGoSxhVqEj/9UabSRyTuLEZO8L7SjEhp1TLYd9dUsdcHsdQ26lT7GXie/bw4VTwBY6XPcPrlFsjf7DeRjVMtQA==}
     hasBin: true
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -3674,7 +3674,7 @@ snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
 
-  '@anthropic-ai/sdk@0.70.0(zod@4.4.3)':
+  '@anthropic-ai/sdk@0.84.0(zod@4.4.3)':
     dependencies:
       json-schema-to-ts: 3.1.1
     optionalDependencies:

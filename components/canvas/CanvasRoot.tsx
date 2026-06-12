@@ -37,6 +37,7 @@ import { findClearRegion } from "./copyToCanvas";
 import { useTheme } from "@/lib/storage/theme";
 import { takeShapeTransfers } from "@/lib/storage/shapeTransfers";
 import { restoreFocus } from "@/lib/focus/openFocus";
+import { seedWelcomeCanvas } from "@/lib/canvas/seedWelcomeCanvas";
 
 const shapeUtils = [
   TextNodeUtil,
@@ -94,6 +95,13 @@ const textOptions: TLTextOptions = {
 // app shell — see gotcha #20 in agent_docs/session-brief.md (font-family is
 // applied inline from the theme; `--tl-font-*` CSS vars are dead code in v5).
 const SANS_STACK = "var(--font-inter), system-ui, -apple-system, sans-serif";
+// Match the focus editor's font choices so a shape's font reads the same on the
+// canvas and when opened full-screen. `draw` stays sans (the default slot) so
+// existing canvas text is unaffected; `serif`/`mono` become real alternatives.
+const SERIF_STACK =
+  "var(--font-newsreader), Georgia, Cambria, \"Times New Roman\", serif";
+const MONO_STACK =
+  "var(--font-jetbrains-mono), ui-monospace, \"SF Mono\", monospace";
 
 // Minimal options bag for tldraw's default file handler. We call it directly
 // from our custom "files" external content handler (see onMount below) and so
@@ -133,6 +141,8 @@ export function CanvasRoot({
           ...base.fonts,
           draw: { ...base.fonts.draw, fontFamily: SANS_STACK },
           sans: { ...base.fonts.sans, fontFamily: SANS_STACK },
+          serif: { ...base.fonts.serif, fontFamily: SERIF_STACK },
+          mono: { ...base.fonts.mono, fontFamily: MONO_STACK },
         },
       });
     }
@@ -303,6 +313,22 @@ export function CanvasRoot({
       setTimeout(tryRestore, 150);
     };
     tryRestore();
+
+    // First-run welcome: seed the intro cards onto the brand-new welcome canvas,
+    // once. Gated on the onboarding redirect marker (?welcome=1), NOT just an
+    // empty board, so this can only fire for a confirmed fresh newcomer and can
+    // never seed over an existing user's canvas-ai-v1 data. The empty-page check
+    // is a belt-and-suspenders backstop.
+    if (
+      persistenceKey === "canvas-ai-v1" &&
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("welcome") === "1" &&
+      window.localStorage.getItem("canvas-ai:welcome-seeded") !== "1" &&
+      editor.getCurrentPageShapeIds().size === 0
+    ) {
+      window.localStorage.setItem("canvas-ai:welcome-seeded", "1");
+      seedWelcomeCanvas(editor);
+    }
   }, [persistenceKey]);
 
   return (

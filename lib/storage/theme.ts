@@ -6,8 +6,8 @@ import { reportStorageError } from "./quotaToast";
 export type Theme = "dark" | "light";
 
 const STORAGE_KEY = "canvas-ai:theme";
-// New users onboard in light mode; they can switch to dark and it persists.
-const DEFAULT: Theme = "light";
+// New users onboard in dark mode; they can switch to light and it persists.
+const DEFAULT: Theme = "dark";
 
 const listeners = new Set<() => void>();
 

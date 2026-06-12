@@ -34,6 +34,7 @@
   --radius-button: 6px;
 
   --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+  --font-serif: var(--font-newsreader), Georgia, Cambria, "Times New Roman", serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono", monospace;
 
   --ease-out-fast: cubic-bezier(0.2, 0, 0, 1);
@@ -101,6 +102,16 @@ body {
   --color-hover: var(--color-surface-hover);
   background: var(--color-app);
   color: var(--color-text-primary);
+}
+
+/* tldraw watermark ("Get a license for production"). tldraw anchors it to the
+   bottom-right of the editor; move it to the bottom-left corner. The two-class
+   selector beats tldraw's own single-class rule (injected at runtime, possibly
+   with !important), and setting both left and right covers either anchoring
+   style (a `right` offset or the `inset` shorthand). */
+.tl-container .tl-watermark_SEE-LICENSE {
+  left: 12px !important;
+  right: auto !important;
 }
 
 /* tldraw rich-text highlight (the marker in the text/note toolbar). tldraw's
@@ -223,7 +234,9 @@ body {
    look but scaled up for full-page reading. Single rule set serves the live
    editor (.ProseMirror under .canvas-ai-prose) and the streaming renderer. */
 .canvas-ai-prose {
-  font-family: var(--font-sans);
+  /* --doc-font is set per-document by the focus editor's font picker; falls
+     back to the app sans default everywhere else (previews, streaming view). */
+  font-family: var(--doc-font, var(--font-sans));
   font-size: 15px;
   line-height: 1.65;
   color: var(--color-text-primary);

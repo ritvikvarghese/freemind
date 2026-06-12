@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono, Newsreader } from "next/font/google";
 import "./globals.css";
 import { StorageGuard } from "@/components/StorageGuard";
 import { VersionWatcher } from "@/components/VersionWatcher";
@@ -16,6 +16,12 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+const newsreader = Newsreader({
+  variable: "--font-newsreader",
+  subsets: ["latin"],
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "Freemind",
   description: "A canvas for the mind.",
@@ -23,8 +29,8 @@ export const metadata: Metadata = {
 
 // Runs in <head> before React hydrates — prevents a theme flash on first paint.
 // Keep it minimal: localStorage read + data-theme set. New users (no stored
-// value) default to light; an explicit dark choice persists and wins.
-const themeBootstrap = `try{var t=localStorage.getItem('canvas-ai:theme');document.documentElement.setAttribute('data-theme',(t==='light'||t==='dark')?t:'light');}catch(e){document.documentElement.setAttribute('data-theme','light');}`;
+// value) default to dark; an explicit light choice persists and wins.
+const themeBootstrap = `try{var t=localStorage.getItem('canvas-ai:theme');document.documentElement.setAttribute('data-theme',(t==='light'||t==='dark')?t:'dark');}catch(e){document.documentElement.setAttribute('data-theme','dark');}`;
 
 export default function RootLayout({
   children,
@@ -32,7 +38,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${jetbrainsMono.variable}`}
+      className={`${inter.variable} ${jetbrainsMono.variable} ${newsreader.variable}`}
       suppressHydrationWarning
     >
       <head>

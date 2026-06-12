@@ -9,10 +9,15 @@ import {
   useValue,
   type Editor,
   type TLDefaultColorStyle,
+  type TLDefaultFontStyle,
   type TLShapePartial,
 } from "tldraw";
 import type { Editor as TiptapEditor } from "@tiptap/core";
-import { EditorToolbarContent } from "@/components/focus/editor/BubbleToolbar";
+import {
+  EditorToolbarContent,
+  FontMenu,
+  type DocFont,
+} from "@/components/focus/editor/BubbleToolbar";
 
 /**
  * Rich text toolbar for canvas text shapes. tldraw's rich text is Tiptap under
@@ -46,9 +51,51 @@ export function CanvasRichTextToolbar() {
         editor={textEditor as unknown as TiptapEditor}
         showHeadings={false}
         leadingControl={<TextColorControl editor={editor} />}
+        fontControl={<CanvasFontControl editor={editor} />}
       />
     </DefaultRichTextToolbar>
   );
+}
+
+// Per-shape font picker for the editing text (or note) shape. tldraw stores one
+// font per text shape as a native style prop (draw/sans/serif/mono), so picking
+// restyles the whole shape and persists in the tldraw store with no extra prop.
+// The default `draw` slot is themed to the app sans (see CanvasRoot.onMount), so
+// it surfaces as "Sans" here.
+function CanvasFontControl({ editor }: { editor: Editor }) {
+  const editingShape = useValue(
+    "canvas-text-font-shape",
+    () => {
+      const id = editor.getEditingShapeId() ?? editor.getOnlySelectedShape()?.id;
+      const shape = id ? editor.getShape(id) : null;
+      if (!shape || (shape.type !== "text" && shape.type !== "note")) return null;
+      return shape;
+    },
+    [editor],
+  );
+
+  const current: DocFont = useValue(
+    "canvas-text-font-current",
+    () => {
+      const font = (editingShape?.props as { font?: string } | undefined)?.font;
+      // `draw` is themed to the app sans, so it reads as "Sans" in the picker.
+      return font === "serif" || font === "mono" ? font : "sans";
+    },
+    [editingShape],
+  );
+
+  if (!editingShape) return null;
+
+  const pick = (font: DocFont) => {
+    editor.markHistoryStoppingPoint("set text font");
+    editor.updateShape({
+      id: editingShape.id,
+      type: editingShape.type,
+      props: { font: font as TLDefaultFontStyle },
+    } as TLShapePartial);
+  };
+
+  return <FontMenu current={current} onSelect={pick} />;
 }
 
 // Per-shape color picker for the editing text (or note) shape. tldraw colors a

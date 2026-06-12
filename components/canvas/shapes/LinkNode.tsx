@@ -11,6 +11,7 @@ import {
   resizeBox,
 } from "tldraw";
 import { Loader2, AlertTriangle, Link as LinkIcon } from "lucide-react";
+import { openExternalUrl } from "@/lib/url/openExternal";
 import { ConnectHandle } from "./ConnectHandle";
 
 export type LinkNodeShape = TLBaseShape<
@@ -85,11 +86,9 @@ export class LinkNodeUtil extends BaseBoxShapeUtil<LinkNodeShape> {
     return resizeBox(shape, info, { minWidth: MIN_W, minHeight: MIN_H });
   }
 
-  // Open the original page in a new tab on double-click.
+  // Open the original page in a new tab on double-click (http(s) only).
   override onDoubleClick(shape: LinkNodeShape) {
-    if (shape.props.url && typeof window !== "undefined") {
-      window.open(shape.props.url, "_blank", "noopener,noreferrer");
-    }
+    openExternalUrl(shape.props.url);
   }
 
   override component(shape: LinkNodeShape) {

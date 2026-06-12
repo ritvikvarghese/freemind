@@ -20,6 +20,13 @@ export type Board = {
   createdAt: number; // epoch ms
   /** Folder this board lives in. Absent = top level. Additive; no migration. */
   folderId?: string;
+  /**
+   * "What is this canvas about" set at creation. Fed into the system prompt of
+   * every AI interaction on this canvas as ambient purpose (see
+   * lib/agent/canvasContext.ts), distinct from the selected sources. Absent or
+   * empty = nothing is sent. Additive; no migration.
+   */
+  context?: string;
 };
 
 // A folder groups boards on the home page. It owns no tldraw data — it's just a
@@ -42,7 +49,7 @@ const STORAGE_KEY = "canvas-ai:boards";
 
 const LEGACY_BOARD: Board = {
   id: "legacy",
-  title: "Default",
+  title: "welcome",
   persistenceKey: "canvas-ai-v1",
   createdAt: 0, // unknown — pre-dates the createdAt field
 };
@@ -130,17 +137,30 @@ export function getBoard(id: string): Board | undefined {
   return getBoards().find((b) => b.id === id);
 }
 
-export function createBoard(title: string): Board {
+export function createBoard(title: string, context?: string): Board {
   const id = crypto.randomUUID();
   const trimmed = title.trim() || "Untitled";
+  const ctx = context?.trim();
   const board: Board = {
     id,
     title: trimmed,
     persistenceKey: `canvas-ai-board:${id}`,
     createdAt: Date.now(),
+    // Only persist context when the user actually wrote some.
+    ...(ctx ? { context: ctx } : {}),
   };
   writeRaw([board, ...getBoards()]);
   return board;
+}
+
+// The "what is this canvas about" text for a board, found by its
+// persistenceKey (the handle the active canvas is tracked by, see
+// lib/storage/currentBoard.ts). Returns undefined when the board is unknown or
+// has no context. Used by the AI layer to fold canvas purpose into prompts.
+export function getBoardContextByPersistenceKey(
+  persistenceKey: string,
+): string | undefined {
+  return getBoards().find((b) => b.persistenceKey === persistenceKey)?.context;
 }
 
 // Delete a board: remove it from the list AND drop the tldraw IndexedDB
@@ -340,31 +360,6 @@ function omitParentId(f: Folder): Folder {
   const copy = { ...f };
   delete copy.parentId;
   return copy;
-}
-
-// Persist a manual ordering of the folder list (mirrors reorderBoards). Order is
-// stored flat; each level's view is a stable filter of this array, so reordering
-// here reorders siblings within their level. Any id missing from `orderedIds` is
-// appended. No-op if already identical.
-export function reorderFolders(orderedIds: string[]): void {
-  const folders = getFolders();
-  const byId = new Map(folders.map((f) => [f.id, f]));
-  const next: Folder[] = [];
-  for (const id of orderedIds) {
-    const f = byId.get(id);
-    if (f) {
-      next.push(f);
-      byId.delete(id);
-    }
-  }
-  for (const f of byId.values()) next.push(f);
-  if (
-    next.length === folders.length &&
-    next.every((f, i) => f.id === folders[i].id)
-  ) {
-    return;
-  }
-  writeFolders(next);
 }
 
 // The single drag gesture for folders: make `draggedId` a sibling of `targetId`

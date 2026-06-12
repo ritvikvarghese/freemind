@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -35,6 +36,7 @@ import {
 } from "@/lib/storage/boards";
 import { useBoardKey } from "./BoardContext";
 import { useFocusShapeId } from "@/lib/focus/openFocus";
+import { NameFolderDialog } from "@/components/folders/NameFolderDialog";
 
 // Drag-and-drop context shared by the sidebar and its (recursive) folder rows.
 // Mirrors the home page (components/home/HomeInner.tsx) so the two stay in sync:
@@ -100,6 +102,12 @@ export function BoardSidebar() {
   const focusShapeId = useFocusShapeId();
 
   const [open, setOpen] = useState(false);
+  const [newCanvasOpen, setNewCanvasOpen] = useState(false);
+  // Folder-naming modal: `null` = closed; `{ parentId }` carries the parent when
+  // creating a subfolder (undefined parentId = top-level folder).
+  const [namingFolder, setNamingFolder] = useState<{
+    parentId?: string;
+  } | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
@@ -118,7 +126,9 @@ export function BoardSidebar() {
   const currentId = currentBoard?.id;
 
   const topFolders = folders.filter((f) => !f.parentId);
-  const topBoards = boards.filter((b) => !b.folderId);
+  // Surface boards whose folder no longer exists at top level (never hide them).
+  const folderIds = new Set(folders.map((f) => f.id));
+  const topBoards = boards.filter((b) => !b.folderId || !folderIds.has(b.folderId));
   const subfoldersOf = (fid: string) =>
     folders.filter((f) => f.parentId === fid);
   const boardsInFolder = (fid: string) =>
@@ -245,16 +255,33 @@ export function BoardSidebar() {
     window.open(`/b/${boardId}`, "_blank", "noopener,noreferrer");
   }, []);
 
-  const newCanvas = useCallback(() => {
-    const board = createBoard("");
-    setOpen(false);
-    router.push(`/b/${board.id}`);
-  }, [router]);
+  // The New canvas button opens a dialog (name + "what's this about") rather
+  // than creating instantly, so the canvas context can be captured up front.
+  const newCanvas = useCallback(() => setNewCanvasOpen(true), []);
+
+  const createCanvas = useCallback(
+    (name: string, context: string) => {
+      const board = createBoard(name, context);
+      setNewCanvasOpen(false);
+      setOpen(false);
+      router.push(`/b/${board.id}`);
+    },
+    [router],
+  );
 
   const newSubfolder = useCallback((parentId: string) => {
-    createFolder("New folder", parentId);
-    setExpanded((prev) => new Set(prev).add(parentId));
+    setNamingFolder({ parentId });
   }, []);
+
+  const createNamedFolder = useCallback(
+    (name: string) => {
+      const parentId = namingFolder?.parentId;
+      createFolder(name, parentId);
+      setNamingFolder(null);
+      if (parentId) setExpanded((prev) => new Set(prev).add(parentId));
+    },
+    [namingFolder],
+  );
 
   const commitBoardRename = useCallback((board: Board, name: string) => {
     renameBoard(board.id, name);
@@ -363,6 +390,20 @@ export function BoardSidebar() {
         ) : null}
       </div>
 
+      {newCanvasOpen ? (
+        <NewCanvasDialog
+          onCancel={() => setNewCanvasOpen(false)}
+          onCreate={createCanvas}
+        />
+      ) : null}
+
+      {namingFolder ? (
+        <NameFolderDialog
+          onCancel={() => setNamingFolder(null)}
+          onCreate={createNamedFolder}
+        />
+      ) : null}
+
       {open ? (
         <>
           <div
@@ -425,7 +466,7 @@ export function BoardSidebar() {
               </button>
               <button
                 type="button"
-                onClick={() => createFolder("New folder")}
+                onClick={() => setNamingFolder({})}
                 title="New folder"
                 aria-label="New folder"
                 className="grid h-9 w-9 shrink-0 place-items-center rounded-button border border-hairline text-text-secondary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
@@ -772,4 +813,113 @@ function RowIconButton({
       {children}
     </button>
   );
+}
+
+// New-canvas dialog: a name plus the canvas's purpose ("what's this about"),
+// the latter fed into every AI interaction on the canvas (see
+// lib/agent/canvasContext.ts). Context is optional; Enter in the name field or
+// the Create button commits. Portaled to body so it floats above the canvas,
+// over a light scrim (not a full fade).
+function NewCanvasDialog({
+  onCancel,
+  onCreate,
+}: {
+  onCancel: () => void;
+  onCreate: (name: string, context: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [context, setContext] = useState("");
+  const nameRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    nameRef.current?.focus();
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  const dialog = (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="New canvas"
+      onClick={onCancel}
+      onPointerDown={(e) => e.stopPropagation()}
+      className="pointer-events-auto fixed inset-0 z-[700] grid place-items-center bg-black/30 px-6"
+    >
+      <form
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => {
+          e.preventDefault();
+          onCreate(name, context);
+        }}
+        className="w-full max-w-md rounded-panel border border-hairline bg-elevated p-5 shadow-[var(--shadow-panel)]"
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <div className="text-[15px] font-medium tracking-tight text-text-primary">
+            New canvas
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Close"
+            className="grid h-7 w-7 place-items-center rounded-button text-text-tertiary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
+
+        <label className="mb-1.5 block text-[12px] font-medium text-text-primary">
+          Name
+        </label>
+        <input
+          ref={nameRef}
+          value={name}
+          onChange={(e) => setName(e.currentTarget.value)}
+          placeholder="Name your canvas"
+          className="mb-4 w-full rounded-button border border-hairline bg-elevated px-3 py-2 text-[14px] text-text-primary placeholder:text-text-tertiary outline-none focus:border-hairline-hover transition-colors duration-100"
+        />
+
+        <label className="mb-1.5 block text-[12px] font-medium text-text-primary">
+          What&apos;s this canvas about?{" "}
+          <span className="font-normal text-text-tertiary">optional</span>
+        </label>
+        <textarea
+          value={context}
+          onChange={(e) => setContext(e.currentTarget.value)}
+          placeholder="Goals, the question you're chasing, who it's for."
+          rows={3}
+          className="w-full resize-y rounded-button border border-hairline bg-elevated px-3 py-2 text-[13px] leading-relaxed text-text-primary placeholder:text-text-tertiary outline-none focus:border-hairline-hover transition-colors duration-100"
+        />
+        <p className="mt-2 text-[11px] leading-relaxed text-text-tertiary">
+          Fed to the AI on every chat and artifact in this canvas, so you do not
+          have to restate it.
+        </p>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="h-8 rounded-button px-3 text-[13px] text-text-secondary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="h-8 rounded-button bg-accent px-3.5 text-[13px] font-medium text-on-accent transition-opacity duration-100 hover:opacity-90"
+          >
+            Create canvas
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+
+  if (typeof document === "undefined" || !document.body) return dialog;
+  return createPortal(dialog, document.body);
 }

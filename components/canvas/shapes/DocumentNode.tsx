@@ -74,6 +74,11 @@ export type DocumentNodeShape = TLBaseShape<
     /** External "watch/source" link (e.g. the YouTube video this transcript
      * came from). Empty for hand-made or research documents. */
     sourceUrl: string;
+    /** Document-level font, chosen from the focus editor's font picker. Values
+     * mirror the shared DocFont set (and tldraw's font slots). Applied as the
+     * `--doc-font` CSS variable on the editor; defaults to "sans". Stored on the
+     * shape (not in the markdown) so it survives the markdown round-trip. */
+    font: "sans" | "serif" | "mono";
   }
 >;
 
@@ -154,6 +159,7 @@ export class DocumentNodeUtil extends BaseBoxShapeUtil<DocumentNodeShape> {
     ),
     errorMessage: T.string,
     sourceUrl: T.string,
+    font: T.literalEnum("sans", "serif", "mono"),
   };
 
   static override migrations = createShapePropsMigrationSequence({
@@ -190,6 +196,14 @@ export class DocumentNodeUtil extends BaseBoxShapeUtil<DocumentNodeShape> {
         },
         down: "retired",
       },
+      {
+        id: "com.tldraw.shape.canvas-ai-document/5",
+        up: (props) => {
+          const p = props as { font?: string };
+          if (p.font !== "serif" && p.font !== "mono") p.font = "sans";
+        },
+        down: "retired",
+      },
     ],
   });
 
@@ -221,6 +235,7 @@ export class DocumentNodeUtil extends BaseBoxShapeUtil<DocumentNodeShape> {
       sourcesUsed: [],
       errorMessage: "",
       sourceUrl: "",
+      font: "sans",
     };
   }
 

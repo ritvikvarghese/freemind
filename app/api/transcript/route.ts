@@ -8,7 +8,13 @@
 // track list, but those baseUrls now return empty bodies; the ANDROID-client
 // baseUrls serve the actual timedtext (format 3, <p> tags).
 
-import { assertSameOrigin, assertYouTubeHost } from "@/lib/server/guardFetch";
+import {
+  assertSameOrigin,
+  assertYouTubeHost,
+  fetchWithTimeout,
+  readCapped,
+} from "@/lib/server/guardFetch";
+import { assertRateLimit, RateLimitError } from "@/lib/server/rateLimit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,6 +23,10 @@ export const runtime = "nodejs";
 const INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
 const ANDROID_UA =
   "com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip";
+// Bound every upstream fetch so a slow/large response can't pin server resources.
+const FETCH_TIMEOUT_MS = 10_000;
+const MAX_PLAYER_BYTES = 4 * 1024 * 1024;
+const MAX_CAPTION_BYTES = 5 * 1024 * 1024;
 
 type CaptionTrack = {
   baseUrl: string;
@@ -27,7 +37,14 @@ type CaptionTrack = {
 export async function GET(request: Request): Promise<Response> {
   try {
     assertSameOrigin(request);
-  } catch {
+    assertRateLimit(request, "transcript", 20, 60_000);
+  } catch (err) {
+    if (err instanceof RateLimitError) {
+      return Response.json(
+        { ok: false, error: "Too many requests. Slow down." },
+        { status: 429, headers: { "Retry-After": String(err.retryAfterSeconds) } },
+      );
+    }
     return Response.json({ ok: false, error: "Forbidden." }, { status: 403 });
   }
 
@@ -64,16 +81,18 @@ export async function GET(request: Request): Promise<Response> {
     // baseUrl comes from YouTube's own response, but allowlist the host anyway
     // so this route can never be coaxed into fetching a non-YouTube target.
     assertYouTubeHost(track.baseUrl);
-    const xmlRes = await fetch(track.baseUrl, {
-      headers: { "User-Agent": ANDROID_UA },
-    });
+    const xmlRes = await fetchWithTimeout(
+      track.baseUrl,
+      { headers: { "User-Agent": ANDROID_UA } },
+      FETCH_TIMEOUT_MS,
+    );
     if (!xmlRes.ok) {
       return Response.json(
         { ok: false, error: "Could not fetch the caption track." },
         { status: 502 },
       );
     }
-    const transcript = parseTimedText(await xmlRes.text());
+    const transcript = parseTimedText(await readCapped(xmlRes, MAX_CAPTION_BYTES));
     if (!transcript.trim()) {
       return Response.json(
         { ok: false, error: "Transcript was empty." },
@@ -107,7 +126,7 @@ async function fetchPlayer(videoId: string): Promise<Record<string, unknown> & {
   };
   videoDetails?: { title?: string };
 }> {
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_KEY}`,
     {
       method: "POST",
@@ -126,8 +145,9 @@ async function fetchPlayer(videoId: string): Promise<Record<string, unknown> & {
         videoId,
       }),
     },
+    FETCH_TIMEOUT_MS,
   );
-  return res.json();
+  return JSON.parse(await readCapped(res, MAX_PLAYER_BYTES));
 }
 
 function extractVideoId(input: string): string | null {

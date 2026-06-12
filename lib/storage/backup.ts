@@ -245,6 +245,18 @@ export async function downloadBackup(): Promise<void> {
 
 const BOARDS_LS = "canvas-ai:boards";
 
+/** Best-effort delete of a database; resolves regardless of outcome. */
+function deleteDatabaseSafe(name: string): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.deleteDatabase(name);
+      req.onsuccess = req.onerror = req.onblocked = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
 function createDatabaseFromDump(dump: DbDump): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(dump.name, dump.version);
@@ -355,12 +367,22 @@ export async function importBackup(data: BackupFile): Promise<ImportResult> {
   };
 
   const existing = new Set(await listOurDatabases());
+  const dumps = Array.isArray(data.databases) ? data.databases : [];
 
-  for (const dump of data.databases) {
+  for (const dump of dumps) {
     const isTldraw = dump.name.startsWith("TLDRAW_");
     if (!existing.has(dump.name)) {
-      result.recordsMerged += await restoreFullDatabase(dump);
-      result.databasesRestored++;
+      try {
+        result.recordsMerged += await restoreFullDatabase(dump);
+        result.databasesRestored++;
+      } catch (err) {
+        // A failed restore can leave a half-created empty DB behind. That DB
+        // would then look "existing" on a retry and be skipped forever (the
+        // tldraw branch never clobbers). Delete it so a retry re-attempts
+        // cleanly, then surface the failure as before.
+        await deleteDatabaseSafe(dump.name);
+        throw err;
+      }
     } else if (isTldraw) {
       // Never clobber a live canvas that already exists locally.
       result.databasesSkipped++;

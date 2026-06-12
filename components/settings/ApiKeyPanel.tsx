@@ -12,23 +12,15 @@ import {
   Moon,
   Download,
   Upload,
-  ShieldCheck,
-  ShieldAlert,
   KeyRound,
   ArrowRight,
 } from "lucide-react";
-import Anthropic, { AuthenticationError, APIError } from "@anthropic-ai/sdk";
-import { useEditor } from "tldraw";
 import { clearApiKey, setApiKey, useApiKey } from "@/lib/storage/apiKey";
-import { clearCanvas } from "@/lib/canvas/clearCanvas";
+import { validateApiKey } from "@/lib/agent/validateApiKey";
 import { toast } from "@/components/canvas/toast";
 import { setTheme, useTheme, type Theme } from "@/lib/storage/theme";
 import { useOpenChatId } from "@/lib/chat/openChat";
 import { downloadBackup, importBackupFile } from "@/lib/storage/backup";
-import {
-  isStoragePersisted,
-  requestPersistentStorage,
-} from "@/lib/storage/persist";
 
 type ValidateResult =
   | { kind: "idle" }
@@ -36,8 +28,14 @@ type ValidateResult =
   | { kind: "ok" }
   | { kind: "error"; message: string };
 
-export function ApiKeyPanel() {
-  const editor = useEditor();
+// `onClearCanvas` is supplied only in-canvas; when omitted (e.g. on the home
+// screen) the Clear-canvas section is hidden, which also keeps this component
+// free of any tldraw editor dependency so it can render outside a canvas.
+export function ApiKeyPanel({
+  onClearCanvas,
+}: {
+  onClearCanvas?: () => void;
+} = {}) {
   const { key, source, hasKey } = useApiKey();
   const theme = useTheme();
   const openChatId = useOpenChatId();
@@ -46,7 +44,6 @@ export function ApiKeyPanel() {
   const [reveal, setReveal] = useState(false);
   const [status, setStatus] = useState<ValidateResult>({ kind: "idle" });
   const [confirmingClear, setConfirmingClear] = useState(false);
-  const [persisted, setPersisted] = useState<boolean | null>(null);
   const [backupBusy, setBackupBusy] = useState<"idle" | "export" | "import">(
     "idle",
   );
@@ -61,11 +58,6 @@ export function ApiKeyPanel() {
     }
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open]);
-
-  // Refresh storage-persistence status whenever the panel opens.
-  useEffect(() => {
-    if (open) void isStoragePersisted().then(setPersisted);
   }, [open]);
 
   async function handleExport() {
@@ -95,11 +87,6 @@ export function ApiKeyPanel() {
     }
   }
 
-  async function handleProtectStorage() {
-    await requestPersistentStorage();
-    setPersisted(await isStoragePersisted());
-  }
-
   function openPanel() {
     setDraft("");
     setStatus({ kind: "idle" });
@@ -117,23 +104,16 @@ export function ApiKeyPanel() {
   }
 
   function handleClearCanvas() {
-    const removed = clearCanvas(editor);
+    onClearCanvas?.();
     setConfirmingClear(false);
     setOpen(false);
-    if (removed === 0) {
-      toast("Canvas was already empty.");
-    } else {
-      toast(
-        `Cleared ${removed} shape${removed === 1 ? "" : "s"} — undo if needed (⌘Z).`,
-      );
-    }
   }
 
   async function handleSave() {
     const trimmed = draft.trim();
     if (trimmed.length === 0) return;
     setStatus({ kind: "validating" });
-    const result = await validateKey(trimmed);
+    const result = await validateApiKey(trimmed);
     if (result.ok) {
       setApiKey(trimmed);
       setStatus({ kind: "ok" });
@@ -193,7 +173,15 @@ export function ApiKeyPanel() {
             Anthropic API key
           </div>
           <div className="mt-1 text-[12px] text-text-tertiary">
-            Stored in your browser. Used to call Claude directly from this page.
+            Stored in your browser. Used to call Claude directly from this page.{" "}
+            <a
+              href="https://platform.claude.com/settings/keys"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[var(--color-accent)] underline-offset-2 hover:underline"
+            >
+              Get a key
+            </a>
           </div>
 
           {hasKey ? (
@@ -304,24 +292,6 @@ export function ApiKeyPanel() {
               Import only adds what&apos;s missing.
             </div>
 
-            {persisted !== null ? (
-              persisted ? (
-                <div className="mt-3 flex items-center gap-2 rounded-button border border-hairline px-2.5 py-1.5 text-[11px] text-text-secondary">
-                  <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
-                  Storage is protected from automatic eviction.
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => void handleProtectStorage()}
-                  className="mt-3 flex w-full items-center gap-2 rounded-button border border-hairline px-2.5 py-1.5 text-[11px] text-text-secondary hover:border-hairline-hover hover:text-text-primary transition-colors duration-100"
-                >
-                  <ShieldAlert className="h-3.5 w-3.5" aria-hidden />
-                  Storage not protected. Click to protect.
-                </button>
-              )
-            ) : null}
-
             <div className="mt-3 flex items-center gap-2">
               <button
                 type="button"
@@ -363,46 +333,48 @@ export function ApiKeyPanel() {
             </div>
           </div>
 
-          <div className="mt-4 pt-4 border-t border-hairline">
-            <div className="text-[13px] font-medium tracking-tight text-text-primary">
-              Canvas
-            </div>
-            <div className="mt-1 text-[12px] text-text-tertiary">
-              Remove every note, upload, and document from the canvas. Undoable
-              with ⌘Z right after.
-            </div>
-            <div className="mt-3 flex items-center justify-end">
-              {confirmingClear ? (
-                <>
+          {onClearCanvas ? (
+            <div className="mt-4 pt-4 border-t border-hairline">
+              <div className="text-[13px] font-medium tracking-tight text-text-primary">
+                Canvas
+              </div>
+              <div className="mt-1 text-[12px] text-text-tertiary">
+                Remove every note, upload, and document from the canvas. Undoable
+                with ⌘Z right after.
+              </div>
+              <div className="mt-3 flex items-center justify-end">
+                {confirmingClear ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingClear(false)}
+                      className="text-[12px] text-text-tertiary hover:text-text-secondary px-2 py-1 rounded-button"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleClearCanvas}
+                      className="flex items-center gap-1.5 rounded-button px-3 py-1.5 text-[12px] font-medium border border-hairline transition-colors duration-100 hover:bg-surface-hover"
+                      style={{ color: "var(--color-error)" }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                      Clear everything
+                    </button>
+                  </>
+                ) : (
                   <button
                     type="button"
-                    onClick={() => setConfirmingClear(false)}
-                    className="text-[12px] text-text-tertiary hover:text-text-secondary px-2 py-1 rounded-button"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleClearCanvas}
-                    className="flex items-center gap-1.5 rounded-button px-3 py-1.5 text-[12px] font-medium border border-hairline transition-colors duration-100 hover:bg-surface-hover"
-                    style={{ color: "var(--color-error)" }}
+                    onClick={() => setConfirmingClear(true)}
+                    className="flex items-center gap-1.5 rounded-button px-3 py-1.5 text-[12px] text-text-secondary hover:text-text-primary border border-hairline hover:border-hairline-hover transition-colors duration-100"
                   >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                    Clear everything
+                    Clear canvas
                   </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setConfirmingClear(true)}
-                  className="flex items-center gap-1.5 rounded-button px-3 py-1.5 text-[12px] text-text-secondary hover:text-text-primary border border-hairline hover:border-hairline-hover transition-colors duration-100"
-                >
-                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                  Clear canvas
-                </button>
-              )}
+                )}
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -442,31 +414,4 @@ function ThemeChip({
 function maskKey(k: string): string {
   if (k.length <= 12) return "•".repeat(Math.max(0, k.length - 4)) + k.slice(-4);
   return `${k.slice(0, 7)}…${k.slice(-4)}`;
-}
-
-async function validateKey(
-  key: string,
-): Promise<{ ok: true } | { ok: false; message: string }> {
-  try {
-    const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true });
-    await client.models.list({ limit: 1 });
-    return { ok: true };
-  } catch (err) {
-    if (err instanceof AuthenticationError) {
-      return { ok: false, message: "Invalid API key." };
-    }
-    if (err instanceof APIError) {
-      return { ok: false, message: `API error: ${err.status} ${err.message}` };
-    }
-    if (err instanceof Error && err.message.toLowerCase().includes("failed to fetch")) {
-      return {
-        ok: false,
-        message: "Cannot reach api.anthropic.com — check network or firewall.",
-      };
-    }
-    return {
-      ok: false,
-      message: err instanceof Error ? err.message : String(err),
-    };
-  }
 }

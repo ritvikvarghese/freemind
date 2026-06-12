@@ -11,7 +11,7 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
 import { buildExtensions } from "./extensions";
 import { SlashMenu } from "./SlashMenu";
-import { BubbleToolbar } from "./BubbleToolbar";
+import { BubbleToolbar, FONT_OPTIONS, type DocFont } from "./BubbleToolbar";
 
 type Props = {
   initialMarkdown: string;
@@ -29,6 +29,12 @@ type Props = {
     editor: Editor;
     wrapperRef: React.RefObject<HTMLDivElement | null>;
   }) => React.ReactNode;
+  /** Document-level font; applied as `--doc-font` on the editor surface so the
+   *  whole document renders in the chosen family. Defaults to "sans". */
+  docFont?: DocFont;
+  /** Font picker rendered in the toolbar (owned by the caller, which writes the
+   *  choice back to the document's font prop). */
+  fontControl?: React.ReactNode;
 };
 
 export type RichEditorHandle = {
@@ -67,6 +73,8 @@ export const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEdito
     onComment,
     extraPlugins,
     overlay,
+    docFont = "sans",
+    fontControl,
   },
   ref,
 ) {
@@ -174,12 +182,20 @@ export const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEdito
 
   if (!editor) return null;
 
+  const docFontCss =
+    FONT_OPTIONS.find((o) => o.value === docFont)?.css ?? "var(--font-sans)";
+
   return (
-    <div ref={wrapperRef} className="canvas-ai-rich-editor relative">
+    <div
+      ref={wrapperRef}
+      className="canvas-ai-rich-editor relative"
+      style={{ "--doc-font": docFontCss } as React.CSSProperties}
+    >
       <BubbleToolbar
         editor={editor}
         onGenerate={onGenerate}
         onComment={onComment}
+        fontControl={fontControl}
       />
       <EditorContent editor={editor} />
       {overlay ? overlay({ editor, wrapperRef }) : null}

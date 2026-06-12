@@ -29,6 +29,7 @@ import type {
   SourceSnapshot,
 } from "@/components/canvas/shapes/DocumentNode";
 import { RichEditor, type RichEditorHandle } from "./editor/RichEditor";
+import { FontMenu } from "./editor/BubbleToolbar";
 import { StreamingView } from "./editor/StreamingView";
 import { ExportButtons } from "./ExportButtons";
 import { UploadFocusMode } from "./UploadFocusMode";
@@ -397,6 +398,23 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
               onGenerate={handleAddToChat}
               onComment={handleComment}
               extraPlugins={extraPlugins}
+              docFont={shape?.props.font ?? "sans"}
+              fontControl={
+                <FontMenu
+                  current={shape?.props.font ?? "sans"}
+                  onSelect={(font) => {
+                    const cur = editor.getShape(shapeId) as
+                      | DocumentNodeShape
+                      | undefined;
+                    if (!cur) return;
+                    editor.updateShape<DocumentNodeShape>({
+                      id: shapeId,
+                      type: "canvas-ai-document",
+                      props: { ...cur.props, font },
+                    });
+                  }}
+                />
+              }
               overlay={({ editor: ed, wrapperRef }) => (
                 <>
                   <BlockHandle editor={ed} wrapperRef={wrapperRef} />

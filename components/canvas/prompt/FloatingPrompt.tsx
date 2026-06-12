@@ -91,7 +91,10 @@ function storeSelection(s: PromptSelection): void {
 }
 
 const PROMPT_WIDTH = 480;
-const BOTTOM_OFFSET = 56;
+// Sits in the bottom-right corner. The watermark used to live there, so this
+// cleared it; now that the watermark is anchored bottom-left, the prompt drops
+// to a clean corner inset that matches the horizontal offset.
+const BOTTOM_OFFSET = 16;
 const RIGHT_OFFSET = 16;
 // "Add to chat" pill geometry (screen space).
 const DOCK_WIDTH = 400;

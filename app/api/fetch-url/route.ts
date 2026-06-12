@@ -9,7 +9,9 @@ import {
   assertSameOrigin,
   safeFetch,
   GuardError,
+  readCapped,
 } from "@/lib/server/guardFetch";
+import { assertRateLimit, RateLimitError } from "@/lib/server/rateLimit";
 
 export const dynamic = "force-dynamic";
 // node:dns in the guard requires the Node runtime (not Edge).
@@ -35,10 +37,18 @@ type FetchUrlResponse =
   | { ok: false; error: string };
 
 export async function GET(request: Request): Promise<Response> {
-  // Only our own front-end may call this open fetcher.
+  // Only our own front-end may call this open fetcher, and only so often: the
+  // same-origin check stops casual abuse, the per-IP limit stops scripted abuse.
   try {
     assertSameOrigin(request);
-  } catch {
+    assertRateLimit(request, "fetch-url", 20, 60_000);
+  } catch (err) {
+    if (err instanceof RateLimitError) {
+      return Response.json(
+        { ok: false, error: "Too many requests. Slow down." } satisfies FetchUrlResponse,
+        { status: 429, headers: { "Retry-After": String(err.retryAfterSeconds) } },
+      );
+    }
     return Response.json(
       { ok: false, error: "Forbidden." } satisfies FetchUrlResponse,
       { status: 403 },
@@ -147,27 +157,6 @@ export async function GET(request: Request): Promise<Response> {
     siteName,
     text: extractBodyText(html),
   } satisfies FetchUrlResponse);
-}
-
-/** Read a response body as text, but stop after `maxBytes` to bound memory. */
-async function readCapped(res: Response, maxBytes: number): Promise<string> {
-  const reader = res.body?.getReader();
-  if (!reader) return await res.text();
-  const decoder = new TextDecoder();
-  let out = "";
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    out += decoder.decode(value, { stream: true });
-    if (total >= maxBytes) {
-      await reader.cancel();
-      break;
-    }
-  }
-  out += decoder.decode();
-  return out;
 }
 
 function sliceHead(html: string): string {

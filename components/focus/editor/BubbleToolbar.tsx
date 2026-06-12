@@ -22,6 +22,8 @@ import {
   AlignRight,
   MessagesSquare,
   MessageSquarePlus,
+  Type,
+  Check,
 } from "lucide-react";
 
 type ContentProps = {
@@ -37,6 +39,11 @@ type ContentProps = {
    *  followed by a divider. Used by the canvas toolbar for the per-shape text
    *  color picker (tldraw text color is a shape style, not a Tiptap mark). */
   leadingControl?: React.ReactNode;
+  /** Optional font picker rendered after the heading menu. Font is an
+   *  element-level property (the whole text shape on canvas, the whole document
+   *  in focus mode), not an inline Tiptap mark, so each surface supplies its own
+   *  control wired to its own store. */
+  fontControl?: React.ReactNode;
 };
 
 type Props = ContentProps;
@@ -48,7 +55,12 @@ type Props = ContentProps;
  * contextual toolbar for canvas text shapes (which provides its own positioning,
  * avoiding the DOM-reparenting conflict the Tiptap plugin causes there).
  */
-export function BubbleToolbar({ editor, onGenerate, onComment }: Props) {
+export function BubbleToolbar({
+  editor,
+  onGenerate,
+  onComment,
+  fontControl,
+}: Props) {
   const elRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -102,6 +114,7 @@ export function BubbleToolbar({ editor, onGenerate, onComment }: Props) {
         editor={editor}
         onGenerate={onGenerate}
         onComment={onComment}
+        fontControl={fontControl}
       />
     </div>
   );
@@ -118,6 +131,7 @@ export function EditorToolbarContent({
   onComment,
   showHeadings = true,
   leadingControl,
+  fontControl,
 }: ContentProps) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkInput, setLinkInput] = useState("");
@@ -215,6 +229,12 @@ export function EditorToolbarContent({
                 current={activeHeading()}
                 onSelect={(lvl) => setHeading(lvl)}
               />
+              <Divider />
+            </>
+          ) : null}
+          {fontControl ? (
+            <>
+              {fontControl}
               <Divider />
             </>
           ) : null}
@@ -458,5 +478,105 @@ function MenuItem({
       </span>
       <span>{children}</span>
     </button>
+  );
+}
+
+/**
+ * The font choices offered everywhere editable text lives (canvas text shapes
+ * and focus-mode documents). The values match tldraw's native font-style slots
+ * (`sans`/`serif`/`mono`) so the canvas can store the choice on the shape with
+ * no new prop, while focus mode applies `css` as a `--doc-font` variable. The
+ * default for everything is `sans`.
+ */
+export type DocFont = "sans" | "serif" | "mono";
+
+export const FONT_OPTIONS: { value: DocFont; label: string; css: string }[] = [
+  { value: "sans", label: "Sans", css: "var(--font-sans)" },
+  { value: "serif", label: "Serif", css: "var(--font-serif)" },
+  { value: "mono", label: "Mono", css: "var(--font-mono)" },
+];
+
+/**
+ * Shared font picker rendered inside the toolbar's `fontControl` slot. Purely
+ * presentational: the caller owns `current` and applies the choice in `onSelect`
+ * (canvas writes the shape's font prop; focus writes the document's font prop).
+ */
+export function FontMenu({
+  current,
+  onSelect,
+}: {
+  current: DocFont;
+  onSelect: (font: DocFont) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPos({ left: r.left, top: r.bottom + 4 });
+    }
+    setOpen((o) => !o);
+  };
+
+  const choose = (font: DocFont) => {
+    onSelect(font);
+    setOpen(false);
+  };
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        aria-label="Font"
+        onClick={toggle}
+        className="group/tt relative grid h-6 w-6 place-items-center rounded-button text-text-secondary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
+      >
+        <Type className="h-3.5 w-3.5" />
+        <span className="pointer-events-none absolute left-1/2 top-full z-[80] mt-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded-button border border-hairline bg-elevated px-2 py-1 text-[11px] font-medium text-text-secondary shadow-floating group-hover/tt:block">
+          Font
+        </span>
+      </button>
+      {open && pos
+        ? createPortal(
+            <div
+              ref={menuRef}
+              onMouseDown={(e) => e.preventDefault()}
+              style={{ position: "fixed", left: pos.left, top: pos.top, zIndex: 80 }}
+              className="min-w-[140px] rounded-button border border-hairline bg-elevated p-1 shadow-floating"
+            >
+              {FONT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => choose(opt.value)}
+                  style={{ fontFamily: opt.css }}
+                  className="flex w-full items-center justify-between gap-2 rounded-button px-2 py-1.5 text-left text-[13px] text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+                >
+                  <span>{opt.label}</span>
+                  {current === opt.value ? (
+                    <Check className="h-3.5 w-3.5 text-text-tertiary" />
+                  ) : null}
+                </button>
+              ))}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   );
 }

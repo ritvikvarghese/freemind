@@ -24,6 +24,7 @@ import { readImageText, ingestImages } from "./ingestImages";
 import { ingestFiles } from "./ingestFiles";
 import { createBlankDoc } from "./toolbar/MinimalToolbar";
 import { useBoardKey } from "./BoardContext";
+import { openExternalUrl } from "@/lib/url/openExternal";
 import { getBoards } from "@/lib/storage/boards";
 import { queueShapeTransfer } from "@/lib/storage/shapeTransfers";
 import { notesToText } from "@/lib/notes/format";
@@ -257,8 +258,7 @@ function NodeActions({
             id="node-open-link"
             label={tk("Open in new tab")}
             onSelect={() => {
-              const url = (shape as LinkNodeShape).props.url;
-              if (url) window.open(url, "_blank", "noopener,noreferrer");
+              openExternalUrl((shape as LinkNodeShape).props.url);
             }}
           />
           <TldrawUiMenuItem
@@ -362,8 +362,7 @@ function MultiActions({
           id="multi-open-links"
           label={tk("Open link in new tab")}
           onSelect={() => {
-            const url = links[0]?.props.url;
-            if (url) window.open(url, "_blank", "noopener,noreferrer");
+            openExternalUrl(links[0]?.props.url);
           }}
         />
       ) : null}

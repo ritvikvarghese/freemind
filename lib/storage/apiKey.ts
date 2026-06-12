@@ -19,7 +19,15 @@ function readLocal(): string | null {
 }
 
 function readEnv(): string | null {
-  // Next.js inlines NEXT_PUBLIC_* at build time, so this is a literal string lookup.
+  // Dev-only convenience: `pnpm dev` can read a key from .env.local so you don't
+  // have to re-paste one each run. A production build must NEVER read it: Next
+  // inlines NEXT_PUBLIC_* vars as literal strings into the client bundle, so a
+  // baked-in key would be served in plaintext to every visitor. Gating on
+  // NODE_ENV (a true compile-time literal) makes this an unconditional early
+  // return in a production build, so the minifier dead-code-eliminates the read
+  // below and the key literal never reaches the shipped JS. Production keys come
+  // only from the browser (readLocal / localStorage) — the BYOK model.
+  if (process.env.NODE_ENV === "production") return null;
   const v = process.env[ENV_KEY];
   return typeof v === "string" && v.length > 0 ? v : null;
 }

@@ -8,6 +8,7 @@ import type { ChatMessage } from "@/lib/storage/chatTypes";
 import { getApiKey } from "@/lib/storage/apiKey";
 import { buildMediaPrefix, toApiMessages, describeError } from "./chatStream";
 import { chatSystemPromptFor, chatWebSearchMaxUses } from "./chatModes";
+import { canvasContextPreamble } from "@/lib/agent/canvasContext";
 import { logUsage } from "@/lib/agent/cacheDebug";
 
 const MODEL =
@@ -70,11 +71,13 @@ export function runCanvasChat(input: RunCanvasChatInput): AbortController {
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
 
   // Stable, prefix-cached system block holds the conversational rules + the
-  // (text) sources. Image / scanned-PDF sources ride in the media prefix.
+  // (text) sources. Image / scanned-PDF sources ride in the media prefix. The
+  // canvas purpose is folded into this same cached block (no extra breakpoint,
+  // cache read after turn one); empty when the canvas has no context.
   const systemBlocks = [
     {
       type: "text" as const,
-      text: chatSystemPromptFor(input.mode, input.sources),
+      text: canvasContextPreamble() + chatSystemPromptFor(input.mode, input.sources),
       cache_control: { type: "ephemeral" as const, ttl: "1h" as const },
     },
   ];

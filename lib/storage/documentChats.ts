@@ -128,30 +128,6 @@ export async function ensureDocumentChatsLoaded(
   }
 }
 
-export function createDocumentChat(input: {
-  documentId: string;
-  boardPersistenceKey: string;
-  title: string;
-  mode: AgentMode;
-}): DocumentChatRecord {
-  const now = Date.now();
-  const rec: DocumentChatRecord = {
-    id: crypto.randomUUID(),
-    documentId: input.documentId,
-    boardPersistenceKey: input.boardPersistenceKey,
-    title: input.title,
-    mode: input.mode,
-    messages: [],
-    createdAt: now,
-    updatedAt: now,
-  };
-  recordById.set(rec.id, rec);
-  rebuildDocument(rec.documentId);
-  notify();
-  void persist(rec);
-  return rec;
-}
-
 /**
  * Create the record for an already-allocated session id if it doesn't exist
  * yet (returns the existing one otherwise). The panel opens a "draft" with a
@@ -227,21 +203,6 @@ export function setDocumentChatMode(id: string, mode: AgentMode): void {
   persistDebounced(id);
 }
 
-export function renameDocumentChat(id: string, title: string): void {
-  const prev = recordById.get(id);
-  const trimmed = title.trim();
-  if (!prev || !trimmed || prev.title === trimmed) return;
-  const next: DocumentChatRecord = {
-    ...prev,
-    title: trimmed,
-    updatedAt: Date.now(),
-  };
-  recordById.set(id, next);
-  rebuildDocument(next.documentId);
-  notify();
-  void persist(next);
-}
-
 export function deleteDocumentChat(id: string): void {
   const rec = recordById.get(id);
   if (!rec) return;
@@ -256,30 +217,6 @@ export function deleteDocumentChat(id: string): void {
       reportStorageError(err);
     }
   })();
-}
-
-/** Cascade: drop every chat for a deleted document. */
-export async function deleteDocumentChatsForDocument(
-  documentId: string,
-): Promise<void> {
-  for (const [id, rec] of recordById) {
-    if (rec.documentId === documentId) recordById.delete(id);
-  }
-  cacheByDocument.delete(documentId);
-  loadedDocuments.delete(documentId);
-  notify();
-  try {
-    const db = await getDb();
-    const tx = db.transaction(STORE, "readwrite");
-    let cursor = await tx.store.index("byDocument").openCursor(documentId);
-    while (cursor) {
-      await cursor.delete();
-      cursor = await cursor.continue();
-    }
-    await tx.done;
-  } catch (err) {
-    reportStorageError(err);
-  }
 }
 
 /** Cascade: drop every document chat tied to a board (board deletion). */

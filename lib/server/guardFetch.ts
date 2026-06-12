@@ -142,6 +142,48 @@ export async function safeFetch(
   throw new GuardError("Too many redirects.");
 }
 
+/**
+ * fetch() with an abort-based timeout so a slow upstream can't hold a server
+ * socket open indefinitely. Clears the timer however the fetch settles.
+ */
+export async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Read a response body but stop after maxBytes, returning the text decoded so
+ * far. Prevents a huge or never-ending upstream from exhausting server memory.
+ */
+export async function readCapped(res: Response, maxBytes: number): Promise<string> {
+  const reader = res.body?.getReader();
+  if (!reader) return await res.text();
+  const decoder = new TextDecoder();
+  let out = "";
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    out += decoder.decode(value, { stream: true });
+    if (total >= maxBytes) {
+      await reader.cancel();
+      break;
+    }
+  }
+  out += decoder.decode();
+  return out;
+}
+
 const YOUTUBE_HOST =
   /(^|\.)(youtube\.com|youtube-nocookie\.com|youtu\.be|googlevideo\.com|ytimg\.com)$/i;
 

@@ -26,14 +26,3 @@ export async function requestPersistentStorage(): Promise<void> {
     /* ignored — purely a durability hint */
   }
 }
-
-/** Whether the origin currently has persistent storage (for surfacing in UI). */
-export async function isStoragePersisted(): Promise<boolean> {
-  try {
-    if (typeof navigator === "undefined" || !navigator.storage?.persisted)
-      return false;
-    return await navigator.storage.persisted();
-  } catch {
-    return false;
-  }
-}

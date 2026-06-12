@@ -1,23 +1,5 @@
 export type AgentMode = "freeform" | "deepsynth" | "deepsearch";
 
-export const AGENT_MODES: { id: AgentMode; label: string; hint: string }[] = [
-  {
-    id: "freeform",
-    label: "Freeform",
-    hint: "Your prompt drives the format. Summarize, synthesize, compare, or whatever you write.",
-  },
-  {
-    id: "deepsynth",
-    label: "Deepsynth",
-    hint: "Thinks hard across your selected sources and returns a tight, reasoned recommendation. No web research.",
-  },
-  {
-    id: "deepsearch",
-    label: "Deepsearch",
-    hint: "Long structured research doc with executive summary, headings, and citations.",
-  },
-];
-
 // Shared across all modes. Some selected sources are pictures (image cards,
 // scanned PDFs) attached as vision blocks after the context. Image OCR is
 // opt-in, so these often arrive with no accompanying text, and the model must
@@ -105,5 +87,3 @@ export function systemPromptFor(mode: AgentMode): string {
       return DEEPSEARCH_SYSTEM_PROMPT;
   }
 }
-
-export const DEFAULT_AGENT_MODE: AgentMode = "freeform";

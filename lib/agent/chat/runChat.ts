@@ -9,6 +9,7 @@ import type { SourceSnapshot } from "@/components/canvas/shapes/DocumentNode";
 import type { ChatMessage } from "@/lib/storage/chatTypes";
 import { getApiKey } from "@/lib/storage/apiKey";
 import { buildChatSystemPrompt } from "./systemPrompt";
+import { canvasContextPreamble } from "@/lib/agent/canvasContext";
 import { CHAT_TOOLS } from "./tools";
 import {
   buildMediaPrefix,
@@ -72,14 +73,18 @@ export function runChat(input: RunChatInput): AbortController {
 
   const webSearchMaxUses = input.webSearchMaxUses ?? 0;
 
-  // Stable, prefix-cached system prompt block holds the doc + sources.
+  // Stable, prefix-cached system prompt block holds the doc + sources. The
+  // canvas purpose is folded into this same cached block (no extra breakpoint,
+  // cache read after turn one); empty when the canvas has no context.
   const systemBlocks = [
     {
       type: "text" as const,
-      text: buildChatSystemPrompt(input.doc.markdown, input.doc.sources, {
-        webSearch: webSearchMaxUses > 0,
-        writeToDocDefault: input.webSearchWritesDoc ?? false,
-      }),
+      text:
+        canvasContextPreamble() +
+        buildChatSystemPrompt(input.doc.markdown, input.doc.sources, {
+          webSearch: webSearchMaxUses > 0,
+          writeToDocDefault: input.webSearchWritesDoc ?? false,
+        }),
       cache_control: { type: "ephemeral" as const, ttl: "1h" as const },
     },
   ];

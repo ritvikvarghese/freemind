@@ -43,25 +43,6 @@ export async function loadChatHistory(
   }
 }
 
-export async function saveChatHistory(
-  artifactId: TLShapeId,
-  boardPersistenceKey: string,
-  messages: ChatMessage[],
-): Promise<void> {
-  try {
-    const db = await getDb();
-    const rec: ChatRecord = {
-      artifactId,
-      boardPersistenceKey,
-      messages,
-      updatedAt: Date.now(),
-    };
-    await db.put(STORE, rec);
-  } catch (err) {
-    reportStorageError(err);
-  }
-}
-
 /**
  * Drop every chat-history record tied to a board's persistenceKey. Called from
  * `deleteBoard` so deleting a board doesn't leave orphan chat blobs in IDB.

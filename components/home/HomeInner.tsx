@@ -11,7 +11,15 @@ import {
   FolderPlus,
   Folder as FolderIcon,
   ChevronRight,
+  Upload,
+  Loader2,
 } from "lucide-react";
+import { importBackupFile } from "@/lib/storage/backup";
+import { hasApiKey } from "@/lib/storage/apiKey";
+import { isOnboarded, markOnboarded } from "@/lib/storage/onboarding";
+import { ApiKeyPanel } from "@/components/settings/ApiKeyPanel";
+import { NameFolderDialog } from "@/components/folders/NameFolderDialog";
+import { ToastProvider, ToastBridge } from "@/components/canvas/toast";
 import {
   createBoard,
   deleteBoard,
@@ -71,6 +79,11 @@ export function HomeInner() {
   const boards = useBoards();
   const folders = useFolders();
   const [title, setTitle] = useState("");
+  const [context, setContext] = useState("");
+  // The composer is a single resting line; it grows the context field while
+  // focused or once either field has content. Tracked via focus events (not an
+  // effect) to respect the set-state-in-effect lint rule.
+  const [composerFocused, setComposerFocused] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
@@ -84,12 +97,56 @@ export function HomeInner() {
   // session-local (a Set of expanded ids) so a reload resets to all-closed.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [pendingDelete, setPendingDelete] = useState<Board | null>(null);
+  // Open folder-naming modal. `null` = closed; `{ parentId }` carries the parent
+  // when creating a subfolder (undefined parentId = top-level folder).
+  const [namingFolder, setNamingFolder] = useState<{
+    parentId?: string;
+  } | null>(null);
   const router = useRouter();
+
+  // First run only: send a brand-new, keyless visitor straight into the seeded
+  // "welcome" canvas (with the welcome/key modal via ?welcome=1), exactly once
+  // per browser. A user who already has a key, or who has been here before, is
+  // marked onboarded and lands on this list as usual. Computed at mount so we
+  // can render nothing while redirecting (no flash of the list).
+  const [redirectingToWelcome] = useState(
+    () => typeof window !== "undefined" && !isOnboarded() && !hasApiKey(),
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!isOnboarded()) markOnboarded();
+    if (redirectingToWelcome) router.replace("/b/legacy?welcome=1");
+  }, [redirectingToWelcome, router]);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    const board = createBoard(title);
+    const board = createBoard(title, context);
     router.push(`/b/${board.id}`);
+  }
+
+  const composerOpen =
+    composerFocused || title.trim().length > 0 || context.trim().length > 0;
+
+  // Restore from a backup file. Home has no toast bridge (it lives in-canvas),
+  // and importBackup writes localStorage directly without notifying the in-tab
+  // board store, so on success we reload to mount the restored boards cleanly.
+  // Surfaces errors inline. This is the first-run migration path for users
+  // coming from a self-hosted / cloned copy, who otherwise can't reach Import
+  // (Settings only exists inside a canvas).
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  async function handleImport(file: File) {
+    setImporting(true);
+    setImportError(null);
+    try {
+      await importBackupFile(file);
+      window.location.reload();
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : String(err));
+      setImporting(false);
+    }
   }
 
   function clearDrag() {
@@ -164,13 +221,22 @@ export function HomeInner() {
   }
 
   function handleNewSubfolder(parentId: string) {
-    createFolder("New folder", parentId);
-    // Reveal the new subfolder by expanding its parent.
-    setExpanded((prev) => new Set(prev).add(parentId));
+    setNamingFolder({ parentId });
+  }
+
+  function handleCreateFolder(name: string) {
+    const parentId = namingFolder?.parentId;
+    createFolder(name, parentId);
+    setNamingFolder(null);
+    // Reveal a new subfolder by expanding its parent.
+    if (parentId) setExpanded((prev) => new Set(prev).add(parentId));
   }
 
   const topFolders = folders.filter((f) => !f.parentId);
-  const topLevel = boards.filter((b) => !b.folderId);
+  // Show boards at top level when they have no folder OR their folder no longer
+  // exists, so a board can never silently vanish if a folder delete half-failed.
+  const folderIds = new Set(folders.map((f) => f.id));
+  const topLevel = boards.filter((b) => !b.folderId || !folderIds.has(b.folderId));
   const draggingFolderHasChildren =
     draggingFolderId !== null &&
     folders.some((f) => f.parentId === draggingFolderId);
@@ -207,8 +273,18 @@ export function HomeInner() {
     subfoldersOf: (fid) => folders.filter((f) => f.parentId === fid),
   };
 
+  // Render nothing while the first-run redirect is in flight (the effect above
+  // fires router.replace), so the board list never flashes for a new visitor.
+  if (redirectingToWelcome) return null;
+
   return (
-    <main className="mx-auto max-w-xl px-6 pt-24 pb-12">
+    <ToastProvider>
+      {/* Settings (API key, theme, export/import) reuses the in-canvas panel
+          without its Clear-canvas section. ToastBridge powers its toasts here,
+          since the toast UI normally only mounts in-canvas. */}
+      <ApiKeyPanel />
+      <ToastBridge />
+      <main className="mx-auto max-w-xl px-6 pt-24 pb-12">
       <div className="mb-10 text-center">
         <h1 className="text-[28px] tracking-tight font-medium text-text-primary">
           Freemind
@@ -218,14 +294,62 @@ export function HomeInner() {
         </p>
       </div>
 
-      <form onSubmit={submit} className="mb-10">
+      <form
+        onSubmit={submit}
+        onFocus={() => setComposerFocused(true)}
+        onBlur={(e) => {
+          // Stay open while focus moves between the title, the context field,
+          // and the Create button (all inside the form); collapse only when
+          // focus truly leaves and nothing has been typed.
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+            setComposerFocused(false);
+        }}
+        className={
+          "mb-10 overflow-hidden rounded-panel border bg-elevated transition-colors duration-100 " +
+          (composerOpen ? "border-hairline-hover" : "border-hairline")
+        }
+      >
         <input
           value={title}
           onChange={(e) => setTitle(e.currentTarget.value)}
           placeholder="Open a new canvas…"
-          autoFocus
-          className="w-full bg-elevated border border-hairline rounded-panel px-4 py-3 text-[14px] text-text-primary placeholder:text-text-tertiary outline-none focus:border-hairline-hover transition-colors duration-100"
+          className="w-full bg-transparent px-4 py-3 text-[14px] text-text-primary placeholder:text-text-tertiary outline-none"
         />
+        <div
+          className={
+            "grid transition-all duration-200 ease-out " +
+            (composerOpen
+              ? "grid-rows-[1fr] opacity-100"
+              : "grid-rows-[0fr] opacity-0")
+          }
+        >
+          <div className="min-h-0 overflow-hidden">
+            <div className="border-t border-hairline">
+              <textarea
+                value={context}
+                onChange={(e) => setContext(e.currentTarget.value)}
+                placeholder="What's this canvas about? (optional)"
+                rows={2}
+                className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-[13px] leading-relaxed text-text-primary placeholder:text-text-tertiary outline-none"
+              />
+              <div className="flex items-center justify-between gap-3 px-3 pb-3 pt-1">
+                <span className="text-[11px] text-text-tertiary">
+                  Used as context for AI in this canvas
+                </span>
+                <button
+                  type="submit"
+                  // Keep focus on click so the composer doesn't collapse out
+                  // from under the press (and Safari, which won't focus a
+                  // button on click, still submits).
+                  onMouseDown={(e) => e.preventDefault()}
+                  className="shrink-0 rounded-button bg-accent px-3.5 py-1.5 text-[13px] font-medium text-on-accent transition-opacity duration-100 hover:opacity-90"
+                >
+                  Create canvas
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </form>
 
       <div
@@ -250,16 +374,49 @@ export function HomeInner() {
         <span className="text-text-tertiary text-[11px] tracking-wider uppercase">
           Canvases
         </span>
-        <button
-          type="button"
-          onClick={() => createFolder("New folder")}
-          title="New folder"
-          className="flex items-center gap-1.5 rounded-button px-2 py-1 text-[11px] text-text-tertiary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
-        >
-          <FolderPlus className="h-3.5 w-3.5" aria-hidden />
-          New folder
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => importInputRef.current?.click()}
+            disabled={importing}
+            title="Import a backup file (restores canvases that are missing)"
+            className="flex items-center gap-1.5 rounded-button px-2 py-1 text-[11px] text-text-tertiary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary disabled:opacity-40"
+          >
+            {importing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : (
+              <Upload className="h-3.5 w-3.5" aria-hidden />
+            )}
+            Import backup
+          </button>
+          <button
+            type="button"
+            onClick={() => setNamingFolder({})}
+            title="New folder"
+            className="flex items-center gap-1.5 rounded-button px-2 py-1 text-[11px] text-text-tertiary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
+          >
+            <FolderPlus className="h-3.5 w-3.5" aria-hidden />
+            New folder
+          </button>
+        </div>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.currentTarget.files?.[0];
+            e.currentTarget.value = "";
+            if (file) void handleImport(file);
+          }}
+        />
       </div>
+
+      {importError ? (
+        <div className="mb-3 rounded-button border border-hairline bg-surface-hover px-3 py-2 text-[12px] text-red-500">
+          Import failed: {importError}
+        </div>
+      ) : null}
 
       {boards.length === 0 && folders.length === 0 ? (
         <div className="text-text-tertiary text-[13px] px-3 py-2">
@@ -296,7 +453,15 @@ export function HomeInner() {
           }}
         />
       ) : null}
-    </main>
+
+      {namingFolder ? (
+        <NameFolderDialog
+          onCancel={() => setNamingFolder(null)}
+          onCreate={handleCreateFolder}
+        />
+      ) : null}
+      </main>
+    </ToastProvider>
   );
 }
 
@@ -314,7 +479,11 @@ function FolderRow({
   const collapsed = !dnd.expanded.has(folder.id);
   const boards = dnd.folderBoards(folder.id);
   const subfolders = isSubfolder ? [] : dnd.subfoldersOf(folder.id);
-  const childCount = boards.length;
+  // Total canvases under this folder, including those nested in its subfolders
+  // (nesting is capped at 2 levels, so subfolders have no further children).
+  const childCount =
+    boards.length +
+    subfolders.reduce((n, sf) => n + dnd.folderBoards(sf.id).length, 0);
 
   const isDraggingSelf = dnd.draggingFolderId === folder.id;
   const isBoardDropTarget =

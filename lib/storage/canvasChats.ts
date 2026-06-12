@@ -152,25 +152,6 @@ export function createCanvasChat(input: {
   return rec;
 }
 
-export async function loadCanvasChat(
-  id: string,
-): Promise<CanvasChatRecord | null> {
-  const inMemory = recordById.get(id);
-  if (inMemory) return inMemory;
-  try {
-    const db = await getDb();
-    const rec = (await db.get(STORE, id)) as CanvasChatRecord | undefined;
-    if (!rec) return null;
-    recordById.set(rec.id, rec);
-    rebuildBoard(rec.boardPersistenceKey);
-    notify();
-    return rec;
-  } catch (err) {
-    reportStorageError(err);
-    return null;
-  }
-}
-
 export function saveCanvasChatMessages(id: string, messages: ChatMessage[]): void {
   const prev = recordById.get(id);
   if (!prev) return;
@@ -219,17 +200,6 @@ export function setCanvasChatMode(id: string, mode: AgentMode): void {
   rebuildBoard(next.boardPersistenceKey);
   notify();
   persistDebounced(id);
-}
-
-export function renameCanvasChat(id: string, title: string): void {
-  const prev = recordById.get(id);
-  const trimmed = title.trim();
-  if (!prev || !trimmed || prev.title === trimmed) return;
-  const next: CanvasChatRecord = { ...prev, title: trimmed, updatedAt: Date.now() };
-  recordById.set(id, next);
-  rebuildBoard(next.boardPersistenceKey);
-  notify();
-  void persist(next);
 }
 
 export function deleteCanvasChat(id: string): void {

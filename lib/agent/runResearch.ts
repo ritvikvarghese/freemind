@@ -8,6 +8,7 @@ import Anthropic, {
 import type { Editor, TLShapeId } from "tldraw";
 import type { DocumentNodeShape } from "@/components/canvas/shapes/DocumentNode";
 import { type AgentMode, systemPromptFor } from "./modes";
+import { canvasContextPreamble } from "./canvasContext";
 import { buildContext, snapshotSource, type SourceShape } from "./buildContext";
 import { beginRun, endRun } from "./abortRegistry";
 import { getApiKey } from "@/lib/storage/apiKey";
@@ -186,7 +187,10 @@ export async function runResearch({
         system: [
           {
             type: "text",
-            text: systemPromptFor(mode),
+            // Canvas purpose is folded into this one cached block (not a
+            // separate block), so it costs no extra cache breakpoint and rides
+            // along as a cache read after the first turn. Empty when unset.
+            text: canvasContextPreamble() + systemPromptFor(mode),
             // 5m TTL: research is one-shot or a fast retry, so the cheaper
             // 1.25x write (vs 2x for 1h) breaks even sooner. 1h only helps the
             // chat paths, where a human leaves gaps between turns.

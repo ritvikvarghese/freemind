@@ -312,6 +312,12 @@ export function CanvasRoot({
         <BoardProvider persistenceKey={persistenceKey}>
           <Tldraw
             persistenceKey={persistenceKey}
+            // tldraw runs free without a key in dev (localhost/HTTP), but a
+            // production domain needs a license or the editor degrades after a
+            // few seconds. The key is domain-locked and meant to ship in the
+            // client, so a NEXT_PUBLIC_ env is correct (unlike the API key).
+            // Unset locally -> undefined -> dev mode, which is fine.
+            licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
             colorScheme={theme}
             shapeUtils={shapeUtils}
             components={components}

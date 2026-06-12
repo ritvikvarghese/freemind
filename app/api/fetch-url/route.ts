@@ -5,7 +5,15 @@
 // — this is a dumb HTTP fetch + regex strip, so it's free; the page text only
 // costs tokens later, when the link is actually used as a source in a prompt.
 
+import {
+  assertSameOrigin,
+  safeFetch,
+  GuardError,
+} from "@/lib/server/guardFetch";
+
 export const dynamic = "force-dynamic";
+// node:dns in the guard requires the Node runtime (not Edge).
+export const runtime = "nodejs";
 
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_HTML_BYTES = 3 * 1024 * 1024; // stop reading runaway pages
@@ -27,6 +35,16 @@ type FetchUrlResponse =
   | { ok: false; error: string };
 
 export async function GET(request: Request): Promise<Response> {
+  // Only our own front-end may call this open fetcher.
+  try {
+    assertSameOrigin(request);
+  } catch {
+    return Response.json(
+      { ok: false, error: "Forbidden." } satisfies FetchUrlResponse,
+      { status: 403 },
+    );
+  }
+
   const { searchParams } = new URL(request.url);
   const raw = (searchParams.get("url") ?? "").trim();
 
@@ -47,17 +65,30 @@ export async function GET(request: Request): Promise<Response> {
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(target.toString(), {
-      signal: controller.signal,
-      redirect: "follow",
-      headers: {
-        "User-Agent": UA,
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
+    // safeFetch validates the host (and every redirect hop) against the SSRF
+    // blocklist after DNS resolution, and follows redirects manually so an
+    // allowed host cannot bounce us to an internal target.
+    res = await safeFetch(
+      target.toString(),
+      {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": UA,
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
       },
-    });
+      { maxRedirects: 5 },
+    );
   } catch (err) {
     clearTimeout(timer);
+    if (err instanceof GuardError) {
+      return Response.json(
+        { ok: false, error: "That URL is not allowed." } satisfies FetchUrlResponse,
+        { status: 400 },
+      );
+    }
     const aborted = err instanceof Error && err.name === "AbortError";
     return Response.json(
       {

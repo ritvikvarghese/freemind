@@ -61,6 +61,27 @@ export function toApiMessages(history: ChatMessage[]): MessageParam[] {
   return out;
 }
 
+// Mark the last message in `messages` as a cache breakpoint, so the whole
+// conversation prefix (system + media + transcript so far) is a cache READ on
+// the next turn instead of being re-billed in full every time. Call this after
+// pushing the prior history but BEFORE the new user message, which changes each
+// turn and must stay outside the cached prefix. No-op on an empty array.
+// Mirrors buildMediaPrefix's "cache the last block" pattern.
+export function markLastCacheable(messages: MessageParam[]): void {
+  const last = messages[messages.length - 1];
+  if (!last) return;
+  const blocks: ContentBlockParam[] =
+    typeof last.content === "string"
+      ? [{ type: "text", text: last.content }]
+      : last.content;
+  const tail = blocks[blocks.length - 1] as ContentBlockParam & {
+    cache_control?: { type: "ephemeral"; ttl?: "1h" };
+  };
+  if (!tail) return;
+  tail.cache_control = { type: "ephemeral", ttl: "1h" };
+  last.content = blocks;
+}
+
 export function describeError(err: unknown): string {
   if (err instanceof AuthenticationError) {
     return "Invalid API key. Update it in Settings.";

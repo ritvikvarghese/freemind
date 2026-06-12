@@ -227,6 +227,10 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
       // the token ceiling, or missing a required field). Surfaced in onDone so
       // the turn doesn't look like it silently did nothing.
       let failedToolCalls = 0;
+      // Diagnostic snapshot of the first unparseable tool call, so the onDone
+      // message can explain *why* (e.g. truncated JSON) instead of a dead-end
+      // "try again", and so the console log pinpoints the payload.
+      let firstFailure: { name: string; json: string } | null = null;
 
       // A+B: feed the model the LIVE editor document captured at send time, and
       // freeze that snapshot for this whole reply. The model then anchors
@@ -276,18 +280,33 @@ export const ChatPanel = forwardRef<ChatPanelHandle, Props>(function ChatPanel(
           const proposal = buildProposalFromTool(id, name, finalJson);
           if (!proposal) {
             failedToolCalls += 1;
+            if (!firstFailure) firstFailure = { name, json: finalJson };
             return;
           }
           assembledProposals.push(proposal);
           addProposal(chatId, proposal);
         },
-        onDone: (finalText, webSearches) => {
+        onDone: (finalText, webSearches, stopReason) => {
           // If some tool calls failed to parse, tell the user instead of
           // dropping them silently (the proposals never showed up as cards).
-          const failNote =
-            failedToolCalls > 0
-              ? `I tried to make ${failedToolCalls === 1 ? "an edit" : `${failedToolCalls} edits`} but could not format ${failedToolCalls === 1 ? "it" : "them"} cleanly. Ask me to try again.`
-              : "";
+          // "max_tokens" means the reply ran out of room mid-edit, so the JSON
+          // was cut off; that needs a *smaller* edit, not a blind retry.
+          let failNote = "";
+          if (failedToolCalls > 0) {
+            const noun = failedToolCalls === 1 ? "an edit" : `${failedToolCalls} edits`;
+            failNote =
+              stopReason === "max_tokens"
+                ? `I started ${noun} but ran out of room before finishing, so it got cut off. Ask me to make the change in smaller pieces.`
+                : `I tried to make ${noun} but could not format ${failedToolCalls === 1 ? "it" : "them"} cleanly. Ask me to try again.`;
+            // Diagnostic: pinpoint the unparseable payload (stop reason, size,
+            // and the exact JSON the model emitted) for the failing tool call.
+            if (firstFailure) {
+              console.warn(
+                `[doc-chat] proposal parse failed: tool=${firstFailure.name} stop_reason=${stopReason} len=${firstFailure.json.length}`,
+                firstFailure.json,
+              );
+            }
+          }
           const text = [finalText, failNote].filter(Boolean).join("\n\n");
           const assistantMsg: ChatMessage = {
             id: crypto.randomUUID(),

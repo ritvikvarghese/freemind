@@ -2,6 +2,7 @@
   "name": "freemind",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.32.1",
   "engines": {
     "node": ">=20"
   },
@@ -32,6 +33,7 @@
     "@tiptap/suggestion": "3.23.6",
     "@tldraw/tlschema": "5.0.1",
     "idb": "^8.0.3",
+    "jsonrepair": "3.14.0",
     "lucide-react": "1.16.0",
     "mammoth": "^1.12.0",
     "next": "16.2.6",

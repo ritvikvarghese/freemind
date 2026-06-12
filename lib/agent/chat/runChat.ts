@@ -10,7 +10,12 @@ import type { ChatMessage } from "@/lib/storage/chatTypes";
 import { getApiKey } from "@/lib/storage/apiKey";
 import { buildChatSystemPrompt } from "./systemPrompt";
 import { CHAT_TOOLS } from "./tools";
-import { buildMediaPrefix, toApiMessages, describeError } from "./chatStream";
+import {
+  buildMediaPrefix,
+  toApiMessages,
+  markLastCacheable,
+  describeError,
+} from "./chatStream";
 import { logUsage } from "@/lib/agent/cacheDebug";
 
 const MODEL =
@@ -31,7 +36,14 @@ export type ToolUseCallbacks = {
   onToolUseEnd: (id: string, name: string, finalInputJson: string) => void;
   /** Fired when a web_search result block arrives (Deepsearch turns only). */
   onWebSearch?: (query: string, urls: string[]) => void;
-  onDone: (text: string, webSearches: WebSearch[]) => void;
+  /** stopReason is the API `stop_reason` ("end_turn", "max_tokens", "tool_use",
+   *  …) or null when we finished via abort. "max_tokens" means the reply was
+   *  truncated, so any trailing tool_use JSON is incomplete and won't parse. */
+  onDone: (
+    text: string,
+    webSearches: WebSearch[],
+    stopReason: string | null,
+  ) => void;
   onError: (message: string) => void;
 };
 
@@ -81,7 +93,13 @@ export function runChat(input: RunChatInput): AbortController {
   const mediaPrefix = buildMediaPrefix(input.doc.sources);
   if (mediaPrefix) messages.push(...mediaPrefix);
 
-  messages.push(...toApiMessages(input.history));
+  const apiHistory = toApiMessages(input.history);
+  messages.push(...apiHistory);
+  // Cache the conversation prefix so multi-turn chats and Redo (which resends
+  // the whole transcript, including each proposal's full old/new text) read the
+  // history back instead of re-billing it every turn. Only when there IS prior
+  // history; the new user message below stays outside the cached prefix.
+  if (apiHistory.length > 0) markLastCacheable(messages);
   messages.push({ role: "user", content: input.userMessage });
 
   // Per-block scratch state: aggregate partial_json by content_block index.
@@ -193,11 +211,11 @@ export function runChat(input: RunChatInput): AbortController {
 
       const final = await stream.finalMessage();
       logUsage("chat", final.usage);
-      input.onDone(finalText, webSearches);
+      input.onDone(finalText, webSearches, final.stop_reason ?? null);
     } catch (err) {
       if (err instanceof APIUserAbortError || controller.signal.aborted) {
         // Treat abort as a clean stop with whatever text we have so far.
-        input.onDone(finalText, webSearches);
+        input.onDone(finalText, webSearches, null);
         return;
       }
       input.onError(describeError(err));

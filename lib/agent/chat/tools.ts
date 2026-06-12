@@ -1,4 +1,5 @@
 import { parse as parsePartialJson } from "partial-json";
+import { jsonrepair } from "jsonrepair";
 import type {
   ProposeEditInput,
   ProposeReplaceSectionInput,
@@ -105,24 +106,49 @@ export function sanitizeEditText(s: string): string {
   return s.replace(/\s*[—–]\s*/g, ", ").replace(/[—–]/g, "-");
 }
 
-export function parseProposeEdit(json: string): ProposeEditInput | null {
-  try {
-    const obj = JSON.parse(json) as Partial<ProposeEditInput>;
-    if (
-      typeof obj.old_text === "string" &&
-      typeof obj.new_text === "string" &&
-      typeof obj.rationale === "string"
-    ) {
-      return {
-        anchor_before: obj.anchor_before ?? "",
-        old_text: obj.old_text,
-        anchor_after: obj.anchor_after ?? "",
-        new_text: sanitizeEditText(obj.new_text),
-        rationale: obj.rationale,
-      };
+/**
+ * Parse a tool-call JSON payload tolerantly. Strict JSON.parse first; on failure
+ * fall back to jsonrepair. The model intermittently emits raw newlines or
+ * unescaped quotes inside string values (common when an edit's new_text /
+ * new_markdown is multi-line markdown), which strict parsing rejects with "Bad
+ * control character" / "Expected ',' or '}'" even though the structure is whole.
+ * jsonrepair re-escapes those and closes the object, so the edit becomes a
+ * reviewable proposal instead of a dead-end "could not format it cleanly".
+ * Returns null only when even the repair can't yield an object (e.g. a payload
+ * badly truncated by the output ceiling), which the caller surfaces honestly.
+ */
+function parseToolJson(json: string): Record<string, unknown> | null {
+  for (const attempt of [
+    () => JSON.parse(json),
+    () => JSON.parse(jsonrepair(json)),
+  ]) {
+    try {
+      const value = attempt();
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        return value as Record<string, unknown>;
+      }
+    } catch {
+      // fall through to the next attempt
     }
-  } catch {
-    return null;
+  }
+  return null;
+}
+
+export function parseProposeEdit(json: string): ProposeEditInput | null {
+  const obj = parseToolJson(json) as Partial<ProposeEditInput> | null;
+  if (
+    obj &&
+    typeof obj.old_text === "string" &&
+    typeof obj.new_text === "string" &&
+    typeof obj.rationale === "string"
+  ) {
+    return {
+      anchor_before: obj.anchor_before ?? "",
+      old_text: obj.old_text,
+      anchor_after: obj.anchor_after ?? "",
+      new_text: sanitizeEditText(obj.new_text),
+      rationale: obj.rationale,
+    };
   }
   return null;
 }
@@ -130,21 +156,18 @@ export function parseProposeEdit(json: string): ProposeEditInput | null {
 export function parseProposeReplaceSection(
   json: string,
 ): ProposeReplaceSectionInput | null {
-  try {
-    const obj = JSON.parse(json) as Partial<ProposeReplaceSectionInput>;
-    if (
-      typeof obj.heading === "string" &&
-      typeof obj.new_markdown === "string" &&
-      typeof obj.rationale === "string"
-    ) {
-      return {
-        heading: obj.heading,
-        new_markdown: sanitizeEditText(obj.new_markdown),
-        rationale: obj.rationale,
-      };
-    }
-  } catch {
-    return null;
+  const obj = parseToolJson(json) as Partial<ProposeReplaceSectionInput> | null;
+  if (
+    obj &&
+    typeof obj.heading === "string" &&
+    typeof obj.new_markdown === "string" &&
+    typeof obj.rationale === "string"
+  ) {
+    return {
+      heading: obj.heading,
+      new_markdown: sanitizeEditText(obj.new_markdown),
+      rationale: obj.rationale,
+    };
   }
   return null;
 }

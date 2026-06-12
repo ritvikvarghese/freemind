@@ -8,7 +8,10 @@
 // track list, but those baseUrls now return empty bodies; the ANDROID-client
 // baseUrls serve the actual timedtext (format 3, <p> tags).
 
+import { assertSameOrigin, assertYouTubeHost } from "@/lib/server/guardFetch";
+
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 // Public InnerTube web key — not a secret; ships in YouTube's own client.
 const INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
@@ -22,6 +25,12 @@ type CaptionTrack = {
 };
 
 export async function GET(request: Request): Promise<Response> {
+  try {
+    assertSameOrigin(request);
+  } catch {
+    return Response.json({ ok: false, error: "Forbidden." }, { status: 403 });
+  }
+
   const { searchParams } = new URL(request.url);
   const raw = searchParams.get("url") ?? searchParams.get("v") ?? "";
   const videoId = extractVideoId(raw.trim());
@@ -52,6 +61,9 @@ export async function GET(request: Request): Promise<Response> {
     }
 
     const track = pickTrack(tracks);
+    // baseUrl comes from YouTube's own response, but allowlist the host anyway
+    // so this route can never be coaxed into fetching a non-YouTube target.
+    assertYouTubeHost(track.baseUrl);
     const xmlRes = await fetch(track.baseUrl, {
       headers: { "User-Agent": ANDROID_UA },
     });

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { StorageGuard } from "@/components/StorageGuard";
+import { VersionWatcher } from "@/components/VersionWatcher";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -39,6 +40,7 @@ export default function RootLayout({
       </head>
       <body>
         <StorageGuard />
+        <VersionWatcher />
         {children}
       </body>
     </html>

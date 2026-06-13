@@ -28,6 +28,7 @@ import { useBoardKey } from "./BoardContext";
 import { openExternalUrl } from "@/lib/url/openExternal";
 import { getBoards } from "@/lib/storage/boards";
 import { queueShapeTransfer } from "@/lib/storage/shapeTransfers";
+import { stripProvenance, withoutProvenance } from "@/lib/canvas/stripProvenance";
 import { toast } from "./toast";
 
 // Menu labels are human strings, not tldraw translation keys; msg() echoes
@@ -289,9 +290,7 @@ function NodeActions({
       <TldrawUiMenuItem
         id="node-duplicate"
         label={tk("Duplicate")}
-        onSelect={() => {
-          editor.duplicateShapes([id], { x: 16, y: 16 });
-        }}
+        onSelect={() => duplicateStandalone(editor, [id])}
       />
       <TldrawUiMenuSubmenu
         id="node-duplicate-to"
@@ -315,7 +314,7 @@ function NodeActions({
                 onSelect={() => {
                   queueShapeTransfer(b.persistenceKey, {
                     type: shape.type,
-                    props: { ...shape.props },
+                    props: withoutProvenance(shape.type, { ...shape.props }),
                   });
                   toast(
                     `Duplicated to "${b.title || "Untitled canvas"}"`,
@@ -388,9 +387,7 @@ function MultiActions({
       <TldrawUiMenuItem
         id="multi-duplicate"
         label={tk(`Duplicate ${ids.length} items`)}
-        onSelect={() => {
-          editor.duplicateShapes(ids, { x: 16, y: 16 });
-        }}
+        onSelect={() => duplicateStandalone(editor, ids)}
       />
       <TldrawUiMenuSubmenu
         id="multi-duplicate-to"
@@ -418,7 +415,7 @@ function MultiActions({
                     if (!s) continue;
                     queueShapeTransfer(b.persistenceKey, {
                       type: s.type,
-                      props: { ...s.props },
+                      props: withoutProvenance(s.type, { ...s.props }),
                     });
                     n++;
                   }
@@ -444,6 +441,12 @@ function MultiActions({
 }
 
 // ---- actions -------------------------------------------------------------
+
+/** Duplicate shapes as standalone copies (no provenance line to the source). */
+function duplicateStandalone(editor: Editor, ids: TLShapeId[]): void {
+  editor.duplicateShapes(ids, { x: 16, y: 16 });
+  stripProvenance(editor, editor.getSelectedShapeIds());
+}
 
 async function copyShape(editor: Editor, shape: TLShape): Promise<void> {
   try {

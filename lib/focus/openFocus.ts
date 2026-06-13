@@ -45,16 +45,18 @@ function notify() {
 const FOCUS_STATE_KEY = "__fmFocus";
 let focusHistoryActive = false;
 
+function clearFocusState(): void {
+  openShapeId = null;
+  clearPersisted();
+  notify();
+}
+
 function handlePopState(): void {
   if (!focusHistoryActive) return;
   // Our focus entry was popped (Back/forward) — close focus, and do NOT touch
   // history again (the entry is already gone).
   focusHistoryActive = false;
-  if (openShapeId !== null) {
-    openShapeId = null;
-    clearPersisted();
-    notify();
-  }
+  if (openShapeId !== null) clearFocusState();
 }
 
 function pushFocusHistory(): void {
@@ -86,9 +88,7 @@ export function closeFocus(): void {
     window.history.back();
     return;
   }
-  openShapeId = null;
-  clearPersisted();
-  notify();
+  clearFocusState();
 }
 
 /**

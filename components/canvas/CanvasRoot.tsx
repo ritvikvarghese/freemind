@@ -4,6 +4,7 @@ import {
   Tldraw,
   createShapeId,
   defaultHandleExternalFileContent,
+  defaultHandleExternalTldrawContent,
   tipTapDefaultExtensions,
   defaultAddFontsFromNode,
   type Editor,
@@ -38,6 +39,7 @@ import { useTheme } from "@/lib/storage/theme";
 import { takeShapeTransfers } from "@/lib/storage/shapeTransfers";
 import { restoreFocus } from "@/lib/focus/openFocus";
 import { seedWelcomeCanvas } from "@/lib/canvas/seedWelcomeCanvas";
+import { withoutProvenance } from "@/lib/canvas/stripProvenance";
 
 const shapeUtils = [
   TextNodeUtil,
@@ -211,6 +213,19 @@ export function CanvasRoot({
     // the page text.
     editor.registerExternalContentHandler("url", async ({ url, point }) => {
       await ingestLink(editor, url, point);
+    });
+
+    // Paste a copy as a STANDALONE artifact: strip the source refs that AI
+    // documents/notes carry in their props, so a pasted copy draws no
+    // provenance line back to the original's source.
+    editor.registerExternalContentHandler("tldraw", async (externalContent) => {
+      for (const s of externalContent.content.shapes) {
+        (s as { props: Record<string, unknown> }).props = withoutProvenance(
+          s.type,
+          s.props as Record<string, unknown>,
+        );
+      }
+      await defaultHandleExternalTldrawContent(editor, externalContent);
     });
 
     // Materialize any shapes "duplicated to" this canvas while it was closed.

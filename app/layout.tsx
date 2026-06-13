@@ -23,6 +23,9 @@ const newsreader = Newsreader({
 });
 
 export const metadata: Metadata = {
+  // Absolute base for og:image / twitter:image. Without it Next falls back to
+  // http://localhost:3000, so shared links resolve a broken preview image.
+  metadataBase: new URL("https://freemind-production.up.railway.app"),
   title: "Freemind",
   description: "A canvas for the mind.",
 };

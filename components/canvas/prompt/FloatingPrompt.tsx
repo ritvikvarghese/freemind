@@ -196,9 +196,11 @@ export function FloatingPrompt() {
     (isArtifact ? !isActive : true) &&
     (isArtifact || !!boardKey);
 
-  useEffect(() => {
-    if (hasSources) textareaRef.current?.focus();
-  }, [hasSources]);
+  // NOTE: we deliberately do NOT auto-focus the textarea when a selection
+  // appears. Moving DOM focus into this textarea makes tldraw treat the canvas
+  // as "typing in a field" and silently drops every keyboard shortcut
+  // (Delete, Cmd+C, undo/redo, select-all) until you click back on the canvas.
+  // The prompt is one click away; keeping canvas shortcuts alive wins.
 
   useLayoutEffect(() => {
     const el = textareaRef.current;

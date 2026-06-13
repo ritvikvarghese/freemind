@@ -7,6 +7,7 @@ import {
   TldrawUiMenuItem,
   TldrawUiMenuSubmenu,
   useEditor,
+  useMenuClipboardEvents,
   createShapeId,
   toRichText,
   type Editor,
@@ -27,8 +28,6 @@ import { useBoardKey } from "./BoardContext";
 import { openExternalUrl } from "@/lib/url/openExternal";
 import { getBoards } from "@/lib/storage/boards";
 import { queueShapeTransfer } from "@/lib/storage/shapeTransfers";
-import { notesToText } from "@/lib/notes/format";
-import type { Note } from "@/lib/notes/types";
 import { toast } from "./toast";
 
 // Menu labels are human strings, not tldraw translation keys; msg() echoes
@@ -348,6 +347,7 @@ function MultiActions({
   ids: TLShapeId[];
   boardKey: string | null;
 }) {
+  const { copy } = useMenuClipboardEvents();
   const otherBoards = getBoards().filter((b) => b.persistenceKey !== boardKey);
   const links = ids
     .map((id) => editor.getShape(id))
@@ -370,20 +370,15 @@ function MultiActions({
         id="multi-copy-all"
         label={tk("Copy all")}
         onSelect={() => {
-          const parts = ids
-            .map((id) => editor.getShape(id))
-            .filter((s): s is TLShape => !!s)
-            .map((s) => shapeToText(editor, s).trim())
-            .filter((t) => t.length > 0);
-          if (parts.length === 0) {
-            toast("Nothing to copy", "info");
-            return;
-          }
-          navigator.clipboard
-            .writeText(parts.join("\n\n---\n\n"))
+          // Copy through tldraw's own clipboard so each shape round-trips as
+          // itself: text stays separate text, images stay images, docs stay
+          // docs, all keeping their relative layout when pasted back onto a
+          // canvas. The old path flattened everything into one text block.
+          editor.setSelectedShapes(ids);
+          copy("context-menu")
             .then(() =>
               toast(
-                `Copied ${parts.length} item${parts.length === 1 ? "" : "s"}`,
+                `Copied ${ids.length} item${ids.length === 1 ? "" : "s"}`,
                 "info",
               ),
             )
@@ -449,33 +444,6 @@ function MultiActions({
 }
 
 // ---- actions -------------------------------------------------------------
-
-/** Plain-text content of a shape, for "Copy all" on a multi-selection. */
-function shapeToText(editor: Editor, shape: TLShape): string {
-  switch (shape.type) {
-    case "canvas-ai-document":
-      return (shape as DocumentNodeShape).props.markdown ?? "";
-    case "canvas-ai-upload":
-      return (shape as UploadNodeShape).props.fullText ?? "";
-    case "canvas-ai-image":
-      return (shape as ImageNodeShape).props.ocrText ?? "";
-    case "canvas-ai-link": {
-      const p = (shape as LinkNodeShape).props;
-      return p.text || p.url || "";
-    }
-    case "canvas-ai-notes":
-      return notesToText(
-        ((shape as { props: { notes?: Note[] } }).props.notes ?? []) as Note[],
-      );
-    default: {
-      // Native text / note shapes (and anything else with text) expose getText.
-      const util = editor.getShapeUtil(shape) as {
-        getText?: (s: TLShape) => string | undefined;
-      };
-      return util.getText?.(shape) ?? "";
-    }
-  }
-}
 
 async function copyShape(editor: Editor, shape: TLShape): Promise<void> {
   try {

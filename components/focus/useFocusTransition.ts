@@ -8,7 +8,7 @@ import { expandFromShapeTransform } from "./expandFromShape";
 // Slow, smooth grow out of the card on open; the same path reversed (shrink
 // back into the card) on close. Tuned slow on purpose.
 const OPEN_TRANSITION =
-  "opacity 460ms cubic-bezier(0.22, 1, 0.36, 1), transform 760ms cubic-bezier(0.16, 1, 0.3, 1)";
+  "opacity 530ms cubic-bezier(0.22, 1, 0.36, 1), transform 875ms cubic-bezier(0.16, 1, 0.3, 1)";
 const CLOSE_TRANSITION =
   "opacity 700ms cubic-bezier(0.16, 1, 0.3, 1), transform 740ms cubic-bezier(0.16, 1, 0.3, 1)";
 const CLOSE_MS = 740;

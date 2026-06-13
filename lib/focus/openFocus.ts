@@ -37,13 +37,55 @@ function notify() {
   for (const cb of listeners) cb();
 }
 
+// Give focus its own browser-history entry so the Back button returns to the
+// canvas (closing focus) instead of skipping past it to wherever the canvas was
+// opened from. We push a tagged entry on open and consume it on close; the
+// popstate handler closes focus when the user navigates Back onto the canvas.
+// Next 16 supports the native History API for this (it merges with router state).
+const FOCUS_STATE_KEY = "__fmFocus";
+let focusHistoryActive = false;
+
+function handlePopState(): void {
+  if (!focusHistoryActive) return;
+  // Our focus entry was popped (Back/forward) — close focus, and do NOT touch
+  // history again (the entry is already gone).
+  focusHistoryActive = false;
+  if (openShapeId !== null) {
+    openShapeId = null;
+    clearPersisted();
+    notify();
+  }
+}
+
+function pushFocusHistory(): void {
+  if (typeof window === "undefined" || focusHistoryActive) return;
+  window.addEventListener("popstate", handlePopState);
+  try {
+    window.history.pushState(
+      { ...(window.history.state ?? {}), [FOCUS_STATE_KEY]: true },
+      "",
+    );
+    focusHistoryActive = true;
+  } catch {
+    // History API blocked — Back just won't return to the canvas; non-fatal.
+  }
+}
+
 export function openFocus(id: TLShapeId): void {
   openShapeId = id;
   persistOpen(id);
+  pushFocusHistory();
   notify();
 }
 
 export function closeFocus(): void {
+  // If we own a pushed history entry, step back to consume it; handlePopState
+  // finishes the close so Back and the in-app close stay symmetric. Otherwise
+  // (no entry, e.g. History API blocked) close directly.
+  if (focusHistoryActive && typeof window !== "undefined") {
+    window.history.back();
+    return;
+  }
   openShapeId = null;
   clearPersisted();
   notify();

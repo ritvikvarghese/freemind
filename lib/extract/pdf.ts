@@ -1,7 +1,7 @@
 import type { TextItem } from "pdfjs-dist/types/src/display/api";
 
 export const MAX_PDF_BYTES = 20 * 1024 * 1024; // 20 MB
-export const MAX_PDF_PAGES = 200;
+export const MAX_PDF_PAGES = 500;
 export const LOW_TEXT_THRESHOLD = 200; // chars
 
 // Anthropic's vision document block tops out at 100 pages per request.

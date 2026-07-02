@@ -29,6 +29,7 @@ import { openExternalUrl } from "@/lib/url/openExternal";
 import { getBoards } from "@/lib/storage/boards";
 import { queueShapeTransfer } from "@/lib/storage/shapeTransfers";
 import { stripProvenance, withoutProvenance } from "@/lib/canvas/stripProvenance";
+import { flyShapeToDownload } from "@/lib/canvas/downloadFly";
 import { toast } from "./toast";
 
 // Menu labels are human strings, not tldraw translation keys; msg() echoes
@@ -467,6 +468,9 @@ async function copyShape(editor: Editor, shape: TLShape): Promise<void> {
 }
 
 function downloadShape(editor: Editor, shape: TLShape): void {
+  // Delight flourish: spin + shrink the artifact toward the browser's download
+  // corner. Cosmetic and self-contained; the real save proceeds below regardless.
+  flyShapeToDownload(editor, shape);
   if (shape.type === "canvas-ai-image") {
     const s = shape as ImageNodeShape;
     if (s.props.dataUrl) downloadHref(s.props.dataUrl, s.props.filename || "image");

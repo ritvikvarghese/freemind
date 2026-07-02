@@ -17,6 +17,7 @@ const OUR_TYPES = new Set([
   "canvas-ai-document",
   "canvas-ai-link", // pasted-link card
   "canvas-ai-notes", // linked reader-notes node
+  "canvas-ai-design-preview", // agent-rendered HTML/animation preview
   "text", // tldraw native text shape (created by the T toolbar button)
   "note", // tldraw native sticky note (created by the toolbar button) — usable as a source
   "bookmark", // tldraw native bookmark shape (pasted link) — usable as a source

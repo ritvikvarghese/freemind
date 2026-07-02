@@ -19,12 +19,13 @@ import { hasApiKey } from "@/lib/storage/apiKey";
 import { isOnboarded, markOnboarded } from "@/lib/storage/onboarding";
 import { ApiKeyPanel } from "@/components/settings/ApiKeyPanel";
 import { NameFolderDialog } from "@/components/folders/NameFolderDialog";
+import { FolderSelect } from "@/components/folders/FolderSelect";
 import { ToastProvider, ToastBridge } from "@/components/canvas/toast";
 import {
   createBoard,
   deleteBoard,
   renameBoard,
-  reorderBoards,
+  dropBoardOnBoard,
   useBoards,
   createFolder,
   renameFolder,
@@ -80,6 +81,7 @@ export function HomeInner() {
   const folders = useFolders();
   const [title, setTitle] = useState("");
   const [context, setContext] = useState("");
+  const [newFolderId, setNewFolderId] = useState<string | null>(null);
   // The composer is a single resting line; it grows the context field while
   // focused or once either field has content. Tracked via focus events (not an
   // effect) to respect the set-state-in-effect lint rule.
@@ -120,7 +122,7 @@ export function HomeInner() {
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    const board = createBoard(title, context);
+    const board = createBoard(title, context, newFolderId);
     router.push(`/b/${board.id}`);
   }
 
@@ -159,25 +161,14 @@ export function HomeInner() {
     setOverHeader(false);
   }
 
-  // Reorder within a single container — either among top-level canvases or
-  // among the canvases inside one folder. Cross-container moves (into/out of a
-  // folder) go through the folder/header drop targets, not this. Reordering the
-  // master array works for folders too: each folder view is a stable filter of
-  // it, so moving a board next to a same-folder sibling reorders just that view.
+  // Drop a canvas onto another canvas: reorder within the same folder, or move it
+  // into the target's folder (top level included) and place it next to the
+  // target. One write, handled by dropBoardOnBoard.
   function handleReorder(targetId: string) {
     const sourceId = draggingId;
     clearDrag();
-    if (!sourceId || sourceId === targetId) return;
-    const source = boards.find((b) => b.id === sourceId);
-    const target = boards.find((b) => b.id === targetId);
-    if (!source || !target || source.folderId !== target.folderId) return;
-    const ids = boards.map((b) => b.id);
-    const from = ids.indexOf(sourceId);
-    const to = ids.indexOf(targetId);
-    if (from === -1 || to === -1) return;
-    ids.splice(from, 1);
-    ids.splice(to, 0, sourceId);
-    reorderBoards(ids);
+    if (!sourceId) return;
+    dropBoardOnBoard(sourceId, targetId);
   }
 
   function moveTo(folderId: string | null) {
@@ -333,9 +324,13 @@ export function HomeInner() {
                 className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-[13px] leading-relaxed text-text-primary placeholder:text-text-tertiary outline-none"
               />
               <div className="flex items-center justify-between gap-3 px-3 pb-3 pt-1">
-                <span className="text-[11px] text-text-tertiary">
-                  Used as context for AI in this canvas
-                </span>
+                <div className="w-44">
+                  <FolderSelect
+                    folders={folders}
+                    value={newFolderId}
+                    onChange={setNewFolderId}
+                  />
+                </div>
                 <button
                   type="submit"
                   // Keep focus on click so the composer doesn't collapse out

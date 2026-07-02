@@ -113,6 +113,35 @@ export function UploadFocusMode({ shapeId, onClose }: Props) {
       window.removeEventListener("keydown", onKey, { capture: true });
   }, [requestClose, flushName]);
 
+  // Make Cmd/Ctrl+C copy the SELECTED TEXT in the read-only doc, not the canvas
+  // shape. tldraw owns a document-level copy/cut handler that, while a shape is
+  // selected (the focused upload always is) and nothing is in its own edit mode,
+  // preventDefaults the event and copies the shape JSON. Its bail conditions only
+  // spare inputs/textareas/contentEditables — this prose pane is a plain div, so
+  // tldraw hijacks the copy. Intercept in the capture phase: when the selection
+  // lives inside the prose pane, write the text ourselves and stopImmediate so
+  // tldraw's handler never runs. The on-screen Copy button is unaffected.
+  useEffect(() => {
+    function onCopy(e: ClipboardEvent) {
+      const proseEl = proseRef.current;
+      const sel = window.getSelection();
+      if (!proseEl || !sel || sel.isCollapsed || sel.rangeCount === 0) return;
+      if (!proseEl.contains(sel.anchorNode) || !proseEl.contains(sel.focusNode))
+        return;
+      const text = sel.toString();
+      if (!text) return;
+      e.clipboardData?.setData("text/plain", text);
+      e.preventDefault(); // we supply the data explicitly
+      e.stopImmediatePropagation(); // keep tldraw from copying the shape instead
+    }
+    document.addEventListener("copy", onCopy, { capture: true });
+    document.addEventListener("cut", onCopy, { capture: true });
+    return () => {
+      document.removeEventListener("copy", onCopy, { capture: true });
+      document.removeEventListener("cut", onCopy, { capture: true });
+    };
+  }, []);
+
   useEffect(() => {
     if (!shape) onClose();
   }, [shape, onClose]);

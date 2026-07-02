@@ -137,7 +137,11 @@ export function getBoard(id: string): Board | undefined {
   return getBoards().find((b) => b.id === id);
 }
 
-export function createBoard(title: string, context?: string): Board {
+export function createBoard(
+  title: string,
+  context?: string,
+  folderId?: string | null,
+): Board {
   const id = crypto.randomUUID();
   const trimmed = title.trim() || "Untitled";
   const ctx = context?.trim();
@@ -148,6 +152,8 @@ export function createBoard(title: string, context?: string): Board {
     createdAt: Date.now(),
     // Only persist context when the user actually wrote some.
     ...(ctx ? { context: ctx } : {}),
+    // Created directly inside a folder (chosen up front). Absent = top level.
+    ...(folderId ? { folderId } : {}),
   };
   writeRaw([board, ...getBoards()]);
   return board;
@@ -281,6 +287,33 @@ function omitFolderId(b: Board): Board {
   const copy = { ...b };
   delete copy.folderId;
   return copy;
+}
+
+// Drop one board onto another (drag a canvas on top of a canvas): move the
+// source into the target's folder (or to the top level when the target is
+// top-level) AND place it immediately before the target, in a single write.
+// Same-folder drops collapse to a plain reorder. No-op if either is missing.
+export function dropBoardOnBoard(sourceId: string, targetId: string): void {
+  if (sourceId === targetId) return;
+  const boards = getBoards();
+  const source = boards.find((b) => b.id === sourceId);
+  const target = boards.find((b) => b.id === targetId);
+  if (!source || !target) return;
+
+  // 1. Re-folder the source to match the target.
+  const refoldered = boards.map((b) => {
+    if (b.id !== sourceId) return b;
+    if (target.folderId === undefined) return omitFolderId(b);
+    return { ...b, folderId: target.folderId };
+  });
+
+  // 2. Reposition: source lands just before the target in the master list (the
+  //    per-folder views are stable filters of it, so this orders the folder too).
+  const ids = refoldered.map((b) => b.id);
+  ids.splice(ids.indexOf(sourceId), 1);
+  ids.splice(ids.indexOf(targetId), 0, sourceId);
+  const byId = new Map(refoldered.map((b) => [b.id, b]));
+  writeRaw(ids.map((id) => byId.get(id) as Board));
 }
 
 // ---- Folders -------------------------------------------------------------

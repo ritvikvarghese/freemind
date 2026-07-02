@@ -15,9 +15,17 @@ import path from "node:path";
 // give up static prerendering/caching, a real performance cost. Since key
 // exfiltration is gated by connect-src regardless of whether a script runs, that
 // tradeoff is acceptable here.
+// In development only, React (Next 16 / React 19) uses eval() for debugging
+// features like reconstructing error callstacks. Without 'unsafe-eval' the
+// browser blocks it and logs a noisy "eval() is not supported" console error on
+// every load (surfaced as a red overlay by Next's dev error UI). Production
+// builds never call eval(), so the prod CSP keeps omitting it and the
+// key-exfiltration posture is unchanged.
+const isDev = process.env.NODE_ENV !== "production";
+
 const csp = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:", // link-card thumbnails are arbitrary https; image cards use data:/blob:
   "font-src 'self' data: https://cdn.tldraw.com", // tldraw loads its UI fonts from its CDN

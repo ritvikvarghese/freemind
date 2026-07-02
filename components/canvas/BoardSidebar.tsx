@@ -24,7 +24,7 @@ import {
   createBoard,
   renameBoard,
   deleteBoard,
-  reorderBoards,
+  dropBoardOnBoard,
   createFolder,
   renameFolder,
   deleteFolder,
@@ -37,6 +37,7 @@ import {
 import { useBoardKey } from "./BoardContext";
 import { useFocusShapeId } from "@/lib/focus/openFocus";
 import { NameFolderDialog } from "@/components/folders/NameFolderDialog";
+import { FolderSelect } from "@/components/folders/FolderSelect";
 
 // Drag-and-drop context shared by the sidebar and its (recursive) folder rows.
 // Mirrors the home page (components/home/HomeInner.tsx) so the two stay in sync:
@@ -177,26 +178,17 @@ export function BoardSidebar() {
     setOverHome(false);
   }, []);
 
-  // Reorder within a single container (top level or one folder). Cross-container
-  // moves go through the folder / home drop targets. Reordering the master array
-  // works per-folder because each folder view is a stable filter of it.
+  // Drop a canvas onto another canvas: reorder within the same folder, or move
+  // it into the target's folder (top level included) and place it next to the
+  // target. One write, handled by dropBoardOnBoard.
   const handleReorder = useCallback(
     (targetId: string) => {
       const sourceId = draggingId;
       clearDrag();
-      if (!sourceId || sourceId === targetId) return;
-      const source = boards.find((b) => b.id === sourceId);
-      const target = boards.find((b) => b.id === targetId);
-      if (!source || !target || source.folderId !== target.folderId) return;
-      const ids = boards.map((b) => b.id);
-      const from = ids.indexOf(sourceId);
-      const to = ids.indexOf(targetId);
-      if (from === -1 || to === -1) return;
-      ids.splice(from, 1);
-      ids.splice(to, 0, sourceId);
-      reorderBoards(ids);
+      if (!sourceId) return;
+      dropBoardOnBoard(sourceId, targetId);
     },
-    [boards, draggingId, clearDrag],
+    [draggingId, clearDrag],
   );
 
   const moveBoardInto = useCallback(
@@ -260,8 +252,8 @@ export function BoardSidebar() {
   const newCanvas = useCallback(() => setNewCanvasOpen(true), []);
 
   const createCanvas = useCallback(
-    (name: string, context: string) => {
-      const board = createBoard(name, context);
+    (name: string, context: string, folderId: string | null) => {
+      const board = createBoard(name, context, folderId);
       setNewCanvasOpen(false);
       setOpen(false);
       router.push(`/b/${board.id}`);
@@ -392,6 +384,8 @@ export function BoardSidebar() {
 
       {newCanvasOpen ? (
         <NewCanvasDialog
+          folders={folders}
+          defaultFolderId={currentBoard?.folderId ?? null}
           onCancel={() => setNewCanvasOpen(false)}
           onCreate={createCanvas}
         />
@@ -815,20 +809,25 @@ function RowIconButton({
   );
 }
 
-// New-canvas dialog: a name plus the canvas's purpose ("what's this about"),
-// the latter fed into every AI interaction on the canvas (see
-// lib/agent/canvasContext.ts). Context is optional; Enter in the name field or
-// the Create button commits. Portaled to body so it floats above the canvas,
-// over a light scrim (not a full fade).
+// New-canvas dialog: a name, the canvas's purpose ("what's this about", fed into
+// every AI interaction on the canvas, see lib/agent/canvasContext.ts), and the
+// folder it lands in (defaulting to the current canvas's folder). Context is
+// optional; Enter in the name field or the Create button commits. Portaled to
+// body so it floats above the canvas, over a light scrim (not a full fade).
 function NewCanvasDialog({
+  folders,
+  defaultFolderId,
   onCancel,
   onCreate,
 }: {
+  folders: Folder[];
+  defaultFolderId: string | null;
   onCancel: () => void;
-  onCreate: (name: string, context: string) => void;
+  onCreate: (name: string, context: string, folderId: string | null) => void;
 }) {
   const [name, setName] = useState("");
   const [context, setContext] = useState("");
+  const [folderId, setFolderId] = useState<string | null>(defaultFolderId);
   const nameRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -856,7 +855,7 @@ function NewCanvasDialog({
         onClick={(e) => e.stopPropagation()}
         onSubmit={(e) => {
           e.preventDefault();
-          onCreate(name, context);
+          onCreate(name, context, folderId);
         }}
         className="w-full max-w-md rounded-panel border border-hairline bg-elevated p-5 shadow-[var(--shadow-panel)]"
       >
@@ -900,6 +899,11 @@ function NewCanvasDialog({
           Fed to the AI on every chat and artifact in this canvas, so you do not
           have to restate it.
         </p>
+
+        <label className="mb-1.5 mt-4 block text-[12px] font-medium text-text-primary">
+          Folder
+        </label>
+        <FolderSelect folders={folders} value={folderId} onChange={setFolderId} />
 
         <div className="mt-5 flex justify-end gap-2">
           <button

@@ -22,6 +22,7 @@ import { ImageNodeUtil } from "./shapes/ImageNode";
 import { LinkNodeUtil } from "./shapes/LinkNode";
 import { DocumentNodeUtil } from "./shapes/DocumentNode";
 import { NotesNodeUtil } from "./shapes/NotesNode";
+import { DesignPreviewNodeUtil } from "./shapes/DesignPreviewNode";
 import { ResizableNoteUtil } from "./shapes/ResizableNoteUtil";
 import { CanvasOverlay } from "./CanvasOverlay";
 import { BoardSidebar } from "./BoardSidebar";
@@ -33,7 +34,8 @@ import { ToastProvider, ToastBridge, toast } from "./toast";
 import { BoardProvider } from "./BoardContext";
 import { ingestFiles } from "./ingestFiles";
 import { ingestImages } from "./ingestImages";
-import { ingestLink } from "./ingestLink";
+import { ingestLink, recoverPendingLinks } from "./ingestLink";
+import { startCanvasBridge } from "./canvasBridge";
 import { findClearRegion } from "./copyToCanvas";
 import { useTheme } from "@/lib/storage/theme";
 import { takeShapeTransfers } from "@/lib/storage/shapeTransfers";
@@ -50,6 +52,7 @@ const shapeUtils = [
   NotesNodeUtil,
   // Replaces the default `note` util so sticky notes can be resized (scaled).
   ResizableNoteUtil,
+  DesignPreviewNodeUtil,
 ];
 
 // Hide every default tldraw UI surface; we render our own minimal toolbar.
@@ -126,8 +129,12 @@ const DEFAULT_FILE_OPTS: TLDefaultExternalContentHandlerOpts = {
 
 export function CanvasRoot({
   persistenceKey,
+  boardId,
 }: {
   persistenceKey: string;
+  // The /b/<boardId> URL segment. Used to key the local canvas bridge so the
+  // agent selects a board by the link it drops (independent of persistenceKey).
+  boardId: string;
 }) {
   const theme = useTheme();
   useEffect(() => {
@@ -135,6 +142,14 @@ export function CanvasRoot({
     return () => setCurrentBoardPersistenceKey(null);
   }, [persistenceKey]);
   const onMount = useCallback((editor: Editor) => {
+    // Paste where the cursor is, not the viewport center. tldraw defaults to
+    // pasting at the viewport center, which feels random when you've scrolled or
+    // are pointing somewhere specific; this routes paste (native Cmd+V and our
+    // own "tldraw" external-content handler, which receives the same computed
+    // point) to the current pointer position. A persisted user preference, so
+    // setting it on mount is idempotent.
+    editor.user.updateUserPreferences({ isPasteAtCursorMode: true });
+
     const base = editor.getTheme("default");
     if (base) {
       editor.updateTheme({
@@ -319,6 +334,11 @@ export function CanvasRoot({
     sweepWhiteText();
     setTimeout(sweepWhiteText, 600);
 
+    // Self-heal link cards stranded in "loading" by a reload mid-fetch. Like the
+    // white-text sweep, run once now and again after persisted shapes land.
+    recoverPendingLinks(editor);
+    setTimeout(() => recoverPendingLinks(editor), 600);
+
     // Reopen the focus view the user was on before a reload. Persisted shapes
     // can land just after onMount, so poll briefly until the shape exists.
     let tries = 0;
@@ -344,7 +364,15 @@ export function CanvasRoot({
       window.localStorage.setItem("canvas-ai:welcome-seeded", "1");
       seedWelcomeCanvas(editor);
     }
-  }, [persistenceKey]);
+
+    // Local canvas bridge: push this board's snapshot to the mailbox on change
+    // and apply write commands an agent enqueues. No-op off localhost / on the
+    // public build. Torn down when the board unmounts (onMount cleanup return).
+    const disposeBridge = startCanvasBridge(editor, boardId);
+    return () => {
+      disposeBridge();
+    };
+  }, [persistenceKey, boardId]);
 
   return (
     <ToastProvider>

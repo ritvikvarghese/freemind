@@ -46,6 +46,7 @@ export function BoardPageInner({ boardId }: { boardId: string }) {
     <CanvasRoot
       key={board.persistenceKey}
       persistenceKey={board.persistenceKey}
+      boardId={board.id}
     />
   );
 }

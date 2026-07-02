@@ -136,6 +136,12 @@ declare module "@tldraw/tlschema" {
         createdAt: number;
       }[];
     };
+    "canvas-ai-design-preview": {
+      w: number;
+      h: number;
+      html: string;
+      title: string;
+    };
   }
 }
 
@@ -263,6 +269,13 @@ type _CheckNotes = TLBaseShape<
   ? true
   : never;
 
+type _CheckDesignPreview = TLBaseShape<
+  "canvas-ai-design-preview",
+  { w: number; h: number; html: string; title: string }
+> extends TLBaseBoxShape & TLShape
+  ? true
+  : never;
+
 export type {
   _CheckText,
   _CheckUpload,
@@ -270,4 +283,5 @@ export type {
   _CheckLink,
   _CheckDocument,
   _CheckNotes,
+  _CheckDesignPreview,
 };

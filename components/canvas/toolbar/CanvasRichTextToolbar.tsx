@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  DefaultRichTextToolbar,
   getColorStyleItems,
   useEditor,
   useValue,
@@ -19,20 +18,34 @@ import {
   type DocFont,
 } from "@/components/focus/editor/BubbleToolbar";
 
+const SCREEN_MARGIN = 16;
+const TOOLBAR_GAP = 8;
+
+function clamp(n: number, min: number, max: number): number {
+  // When the toolbar is wider than the safe area, `max` can fall below `min`;
+  // prefer staying pinned to the left margin rather than going negative.
+  return Math.max(min, Math.min(max, n));
+}
+
 /**
  * Rich text toolbar for canvas text shapes. tldraw's rich text is Tiptap under
  * the hood, so we render the SAME button row as focus mode bound to the
  * editing shape's Tiptap editor (`editor.getRichTextEditor()`).
  *
- * Crucially this uses tldraw's own `DefaultRichTextToolbar` for POSITIONING
- * (TldrawUiContextualToolbar), not Tiptap's BubbleMenuPlugin. The plugin
- * reparents its DOM element, which clashed with React unmounting as tldraw
- * destroys its text editor per edit and crashed the app; tldraw's container is
- * a stable React subtree, so there's no such conflict.
+ * Positioning is OURS, not tldraw's `DefaultRichTextToolbar`. tldraw anchors
+ * the toolbar to the vertical MIDPOINT of the selection and refuses to show it
+ * when that midpoint leaves the viewport (`getToolbarScreenPosition` returns
+ * undefined when `midY` is off-screen). A text box taller than the viewport
+ * therefore loses its toolbar the moment the whole thing is selected (a
+ * partial selection works, selecting everything does not). We instead anchor to
+ * the TOP of the selection and clamp into the viewport, so the toolbar is
+ * always reachable however much text is selected. We keep tldraw's stable React
+ * subtree approach (a portal, not Tiptap's BubbleMenuPlugin, which reparents its
+ * DOM and crashes as tldraw destroys the text editor per edit).
  *
- * Color is added as a leading control: tldraw text color is a per-SHAPE style
- * (one color per text shape), not an inline Tiptap mark, so it's driven off the
- * tldraw editor (the editing shape) rather than the Tiptap selection.
+ * Color/font are leading controls: tldraw text color and font are per-SHAPE
+ * styles (one per text shape), not inline Tiptap marks, so they're driven off
+ * the tldraw editor (the editing shape) rather than the Tiptap selection.
  */
 export function CanvasRichTextToolbar() {
   const editor = useEditor();
@@ -41,9 +54,134 @@ export function CanvasRichTextToolbar() {
     () => editor.getRichTextEditor(),
     [editor],
   );
-  if (!textEditor) return null;
+  const isCoarsePointer = useValue(
+    "canvas-rich-text-coarse",
+    () => editor.getInstanceState().isCoarsePointer,
+    [editor],
+  );
+  // Reposition on pan/zoom: selection client rects are viewport-relative, so a
+  // camera move shifts where the (fixed) toolbar should sit.
+  const camera = useValue("canvas-rich-text-camera", () => editor.getCamera(), [
+    editor,
+  ]);
+  if (!textEditor || isCoarsePointer) return null;
   return (
-    <DefaultRichTextToolbar>
+    <PositionedTextToolbar editor={editor} textEditor={textEditor} camera={camera} />
+  );
+}
+
+function PositionedTextToolbar({
+  editor,
+  textEditor,
+  camera,
+}: {
+  editor: Editor;
+  textEditor: ReturnType<Editor["getRichTextEditor"]>;
+  camera: unknown;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  // Hide while the user is actively drag-selecting so the toolbar doesn't chase
+  // the cursor; it settles into place on pointer-up.
+  const [isMousingDown, setIsMousingDown] = useState(false);
+  const [tick, setTick] = useState(0);
+
+  // Recompute on selection change, layout/size change, scroll, and resize.
+  useEffect(() => {
+    const te = textEditor as unknown as TiptapEditor;
+    const bump = () => setTick((t) => t + 1);
+    te.on("selectionUpdate", bump);
+    te.on("transaction", bump);
+    // Ground truth for selection changes: fires on collapse-to-cursor too, where
+    // Tiptap's selectionUpdate can miss, so the toolbar reliably hides.
+    document.addEventListener("selectionchange", bump);
+    window.addEventListener("scroll", bump, true);
+    window.addEventListener("resize", bump);
+    const dom = te.view?.dom as HTMLElement | undefined;
+    const down = () => setIsMousingDown(true);
+    const up = () => {
+      setIsMousingDown(false);
+      bump();
+    };
+    dom?.addEventListener("pointerdown", down);
+    dom?.addEventListener("mousedown", down);
+    dom?.addEventListener("touchstart", down);
+    document.addEventListener("pointerup", up);
+    document.addEventListener("mouseup", up);
+    document.addEventListener("touchend", up);
+    const ro = new ResizeObserver(bump);
+    if (ref.current) ro.observe(ref.current);
+    bump();
+    return () => {
+      te.off("selectionUpdate", bump);
+      te.off("transaction", bump);
+      document.removeEventListener("selectionchange", bump);
+      window.removeEventListener("scroll", bump, true);
+      window.removeEventListener("resize", bump);
+      dom?.removeEventListener("pointerdown", down);
+      dom?.removeEventListener("mousedown", down);
+      dom?.removeEventListener("touchstart", down);
+      document.removeEventListener("pointerup", up);
+      document.removeEventListener("mouseup", up);
+      document.removeEventListener("touchend", up);
+      ro.disconnect();
+    };
+  }, [textEditor]);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const win = editor.getContainer().ownerDocument.defaultView ?? window;
+    const sel = win.getSelection();
+    if (!el || !sel || sel.rangeCount === 0 || sel.isCollapsed) {
+      setPos(null);
+      return;
+    }
+    // Bounding box of every selection range, in viewport coordinates.
+    let top = Infinity;
+    let left = Infinity;
+    let right = -Infinity;
+    for (let i = 0; i < sel.rangeCount; i++) {
+      const r = sel.getRangeAt(i).getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) continue;
+      top = Math.min(top, r.top);
+      left = Math.min(left, r.left);
+      right = Math.max(right, r.right);
+    }
+    if (!Number.isFinite(top)) {
+      setPos(null);
+      return;
+    }
+    const tb = el.getBoundingClientRect();
+    if (!tb.width || !tb.height) return; // not measured yet; next tick fixes it
+    const vw = win.innerWidth;
+    const vh = win.innerHeight;
+    const midX = (left + right) / 2;
+    // Anchor above the top of the selection; clamp fully into the viewport so a
+    // selection taller than the screen still shows the toolbar near the top.
+    const x = clamp(midX - tb.width / 2, SCREEN_MARGIN, vw - tb.width - SCREEN_MARGIN);
+    const y = clamp(
+      top - tb.height - TOOLBAR_GAP,
+      SCREEN_MARGIN,
+      vh - tb.height - SCREEN_MARGIN,
+    );
+    setPos({ left: Math.round(x), top: Math.round(y) });
+  }, [editor, textEditor, tick, camera]);
+
+  const visible = pos !== null && !isMousingDown;
+
+  return createPortal(
+    <div
+      ref={ref}
+      onPointerDown={(e) => e.stopPropagation()}
+      className="tlui-rich-text__toolbar z-50 rounded-button border border-hairline bg-elevated p-1 shadow-floating"
+      style={{
+        position: "fixed",
+        left: pos?.left ?? -9999,
+        top: pos?.top ?? -9999,
+        visibility: visible ? "visible" : "hidden",
+        boxShadow: "var(--shadow-floating)",
+      }}
+    >
       {/* No headings: tldraw text shapes don't render them. Keep inline
           formatting (bold/italic/underline/strike/highlight/code), align,
           lists, link. Color leads (per-shape, set on the editing shape). */}
@@ -53,7 +191,8 @@ export function CanvasRichTextToolbar() {
         leadingControl={<TextColorControl editor={editor} />}
         fontControl={<CanvasFontControl editor={editor} />}
       />
-    </DefaultRichTextToolbar>
+    </div>,
+    document.body,
   );
 }
 

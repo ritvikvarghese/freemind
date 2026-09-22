@@ -30,6 +30,7 @@ import type {
 } from "@/components/canvas/shapes/DocumentNode";
 import { RichEditor, type RichEditorHandle } from "./editor/RichEditor";
 import { FontMenu } from "./editor/BubbleToolbar";
+import { copyTextToCanvas } from "@/components/canvas/copyToCanvas";
 import { StreamingView } from "./editor/StreamingView";
 import { ExportButtons } from "./ExportButtons";
 import { UploadFocusMode } from "./UploadFocusMode";
@@ -269,6 +270,15 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
     [openChatId, openDraftChat],
   );
 
+  // Bottom-bar "Copy to canvas": drop the selection onto the canvas as a text
+  // node next to this document, the same clip the upload focus view produces.
+  const handleCopyToCanvas = useCallback(
+    (selectionText: string) => {
+      copyTextToCanvas(editor, shapeId, selectionText);
+    },
+    [editor, shapeId],
+  );
+
   const handleDeleteChat = useCallback((id: string) => {
     deleteDocumentChat(id);
     setOpenChatId((cur) => (cur === id ? null : cur));
@@ -473,6 +483,7 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
             disabled={!hasApiKey}
             onLaunch={handleLaunchChat}
             onAddToChat={handleAddToChat}
+            onCopyToCanvas={handleCopyToCanvas}
           />
         ) : null}
       </div>

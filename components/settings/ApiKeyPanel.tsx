@@ -264,8 +264,7 @@ export function ApiKeyPanel({
               Appearance
             </div>
             <div className="mt-1 text-[12px] text-text-tertiary">
-              Pick a canvas theme. The choice is remembered next time you open
-              this app.
+              Pick a canvas theme. We&apos;ll remember your choice.
             </div>
             <div className="mt-3 inline-flex rounded-button border border-hairline p-0.5">
               <ThemeChip

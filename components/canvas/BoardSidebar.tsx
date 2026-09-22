@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -33,11 +32,17 @@ import {
   moveFolderToParent,
   type Board,
   type Folder,
+  canNestFolderUnder,
 } from "@/lib/storage/boards";
 import { useBoardKey } from "./BoardContext";
 import { useFocusShapeId } from "@/lib/focus/openFocus";
 import { NameFolderDialog } from "@/components/folders/NameFolderDialog";
-import { FolderSelect } from "@/components/folders/FolderSelect";
+import { NewCanvasDialog } from "@/components/boards/NewCanvasDialog";
+import { RowAddMenu } from "@/components/boards/RowAddMenu";
+import { indentFor } from "@/lib/folders/indent";
+
+// Left padding every tree row starts from, before its depth indent.
+const ROW_BASE_PAD = 8;
 
 // Drag-and-drop context shared by the sidebar and its (recursive) folder rows.
 // Mirrors the home page (components/home/HomeInner.tsx) so the two stay in sync:
@@ -45,7 +50,9 @@ import { FolderSelect } from "@/components/folders/FolderSelect";
 type SidebarDnd = {
   draggingId: string | null; // board being dragged
   draggingFolderId: string | null; // folder being dragged
-  draggingFolderHasChildren: boolean; // dragged folder has subfolders (2-level cap)
+  // True when the folder being dragged may be nested under `fid`. False inside
+  // the dragged folder's own subtree, which would cycle.
+  canNestInto: (fid: string) => boolean;
   overId: string | null; // board hovered (reorder target)
   overFolderId: string | null; // folder hovered by a dragged board (drop-in)
   overFolderRowId: string | null; // folder hovered by a dragged folder
@@ -74,6 +81,7 @@ type SidebarDnd = {
   onFolderDragOverRow: (id: string, mode: "before" | "inside") => void;
   onFolderDrop: (id: string) => void;
   onNewSubfolder: (parentId: string) => void;
+  onNewCanvasInFolder: (folderId: string) => void;
   onRenameFolder: (id: string | null) => void;
   onCommitFolderRename: (folder: Folder, name: string) => void;
   onDeleteFolder: (folder: Folder) => void;
@@ -103,7 +111,12 @@ export function BoardSidebar() {
   const focusShapeId = useFocusShapeId();
 
   const [open, setOpen] = useState(false);
-  const [newCanvasOpen, setNewCanvasOpen] = useState(false);
+  // New-canvas dialog. `null` = closed; the object carries the folder the new
+  // canvas lands in by default (the picker inside stays editable). A folder
+  // row's + button presets that folder; the header button uses the current one.
+  const [newCanvasTarget, setNewCanvasTarget] = useState<{
+    folderId: string | null;
+  } | null>(null);
   // Folder-naming modal: `null` = closed; `{ parentId }` carries the parent when
   // creating a subfolder (undefined parentId = top-level folder).
   const [namingFolder, setNamingFolder] = useState<{
@@ -140,7 +153,7 @@ export function BoardSidebar() {
   const openSidebar = useCallback(() => {
     const chain = new Set<string>();
     let fid = currentBoard?.folderId;
-    let guard = 0; // 2-level cap, but loop defensively
+    let guard = 0; // nesting is unbounded; bound the walk defensively
     while (fid && guard++ < 8) {
       chain.add(fid);
       fid = folders.find((f) => f.id === fid)?.parentId;
@@ -249,12 +262,15 @@ export function BoardSidebar() {
 
   // The New canvas button opens a dialog (name + "what's this about") rather
   // than creating instantly, so the canvas context can be captured up front.
-  const newCanvas = useCallback(() => setNewCanvasOpen(true), []);
+  const newCanvas = useCallback(
+    () => setNewCanvasTarget({ folderId: currentBoard?.folderId ?? null }),
+    [currentBoard?.folderId],
+  );
 
   const createCanvas = useCallback(
     (name: string, context: string, folderId: string | null) => {
       const board = createBoard(name, context, folderId);
-      setNewCanvasOpen(false);
+      setNewCanvasTarget(null);
       setOpen(false);
       router.push(`/b/${board.id}`);
     },
@@ -310,14 +326,14 @@ export function BoardSidebar() {
   // screen.
   if (focusShapeId) return null;
 
-  const draggingFolderHasChildren =
+  const canNestInto = (fid: string) =>
     draggingFolderId !== null &&
-    folders.some((f) => f.parentId === draggingFolderId);
+    canNestFolderUnder(folders, draggingFolderId, fid);
 
   const dnd: SidebarDnd = {
     draggingId,
     draggingFolderId,
-    draggingFolderHasChildren,
+    canNestInto,
     overId,
     overFolderId,
     overFolderRowId,
@@ -342,6 +358,7 @@ export function BoardSidebar() {
     onFolderDragOverRow,
     onFolderDrop: handleFolderDrop,
     onNewSubfolder: newSubfolder,
+    onNewCanvasInFolder: (folderId) => setNewCanvasTarget({ folderId }),
     onRenameFolder: setRenamingFolderId,
     onCommitFolderRename: commitFolderRename,
     onDeleteFolder: deleteFolderById,
@@ -382,11 +399,11 @@ export function BoardSidebar() {
         ) : null}
       </div>
 
-      {newCanvasOpen ? (
+      {newCanvasTarget ? (
         <NewCanvasDialog
           folders={folders}
-          defaultFolderId={currentBoard?.folderId ?? null}
-          onCancel={() => setNewCanvasOpen(false)}
+          defaultFolderId={newCanvasTarget.folderId}
+          onCancel={() => setNewCanvasTarget(null)}
           onCreate={createCanvas}
         />
       ) : null}
@@ -471,13 +488,7 @@ export function BoardSidebar() {
 
             <div className="min-h-0 flex-1 overflow-auto px-2 py-3">
               {topFolders.map((f) => (
-                <FolderNode
-                  key={f.id}
-                  folder={f}
-                  depth={0}
-                  isSubfolder={false}
-                  dnd={dnd}
-                />
+                <FolderNode key={f.id} folder={f} depth={0} dnd={dnd} />
               ))}
               {topBoards.map((b) => (
                 <BoardRow key={b.id} board={b} depth={0} dnd={dnd} />
@@ -498,16 +509,14 @@ export function BoardSidebar() {
 function FolderNode({
   folder,
   depth,
-  isSubfolder,
   dnd,
 }: {
   folder: Folder;
   depth: number;
-  isSubfolder: boolean;
   dnd: SidebarDnd;
 }) {
   const isOpen = dnd.expanded.has(folder.id);
-  const subs = isSubfolder ? [] : dnd.subfoldersOf(folder.id);
+  const subs = dnd.subfoldersOf(folder.id);
   const fboards = dnd.folderBoards(folder.id);
   const editing = dnd.renamingFolderId === folder.id;
 
@@ -518,8 +527,9 @@ function FolderNode({
     dnd.overFolderRowId === folder.id &&
     dnd.draggingFolderId !== null &&
     dnd.draggingFolderId !== folder.id;
-  // 2-level cap: nest only into a top-level folder, and only a childless folder.
-  const canNest = !isSubfolder && !dnd.draggingFolderHasChildren;
+  // The middle zone reads as "inside" only when the drop is legal, i.e. this row
+  // is not inside the dragged folder's own subtree.
+  const canNest = dnd.canNestInto(folder.id);
   const folderInside =
     isFolderHovered && dnd.folderDropMode === "inside" && canNest;
   const folderBefore = isFolderHovered && !folderInside;
@@ -553,7 +563,7 @@ function FolderNode({
           if (dnd.draggingFolderId) dnd.onFolderDrop(folder.id);
           else if (dnd.draggingId) dnd.onBoardDropInFolder(folder.id);
         }}
-        style={{ opacity: isDraggingSelf ? 0.4 : 1, paddingLeft: 8 + depth * 14 }}
+        style={{ opacity: isDraggingSelf ? 0.4 : 1, paddingLeft: ROW_BASE_PAD + indentFor(depth, 14) }}
         className={
           "group flex items-center gap-1.5 rounded-button border-t-2 py-1.5 pr-2 transition-colors duration-100 " +
           (insideHighlight
@@ -607,14 +617,12 @@ function FolderNode({
         )}
         {!editing ? (
           <div className="flex shrink-0 items-center opacity-0 transition-opacity duration-100 group-hover:opacity-100 focus-within:opacity-100">
-            {!isSubfolder ? (
-              <RowIconButton
-                label="New subfolder"
-                onClick={() => dnd.onNewSubfolder(folder.id)}
-              >
-                <FolderPlus className="h-3.5 w-3.5" aria-hidden />
-              </RowIconButton>
-            ) : null}
+            <RowAddMenu
+              folderName={folder.name}
+              onNewFolder={() => dnd.onNewSubfolder(folder.id)}
+              onNewCanvas={() => dnd.onNewCanvasInFolder(folder.id)}
+              className="grid h-7 w-7 place-items-center rounded-button text-text-tertiary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
+            />
             <RowIconButton
               label="Rename folder"
               onClick={() => dnd.onRenameFolder(folder.id)}
@@ -634,13 +642,7 @@ function FolderNode({
       {isOpen ? (
         <>
           {subs.map((sf) => (
-            <FolderNode
-              key={sf.id}
-              folder={sf}
-              depth={depth + 1}
-              isSubfolder
-              dnd={dnd}
-            />
+            <FolderNode key={sf.id} folder={sf} depth={depth + 1} dnd={dnd} />
           ))}
           {fboards.map((b) => (
             <BoardRow key={b.id} board={b} depth={depth + 1} dnd={dnd} />
@@ -648,7 +650,7 @@ function FolderNode({
           {subs.length + fboards.length === 0 ? (
             <div
               className="py-1 text-[12px] text-text-tertiary"
-              style={{ paddingLeft: 8 + (depth + 1) * 14 + 18 }}
+              style={{ paddingLeft: ROW_BASE_PAD + indentFor(depth + 1, 14) + 18 }}
             >
               Drag a canvas here
             </div>
@@ -668,7 +670,7 @@ function BoardRow({
   depth: number;
   dnd: SidebarDnd;
 }) {
-  const padLeft = 8 + depth * 14 + 18;
+  const padLeft = ROW_BASE_PAD + indentFor(depth, 14) + 18;
   const current = board.id === dnd.currentId;
   const renaming = dnd.renamingBoardId === board.id;
   const isDragging = dnd.draggingId === board.id;
@@ -807,123 +809,4 @@ function RowIconButton({
       {children}
     </button>
   );
-}
-
-// New-canvas dialog: a name, the canvas's purpose ("what's this about", fed into
-// every AI interaction on the canvas, see lib/agent/canvasContext.ts), and the
-// folder it lands in (defaulting to the current canvas's folder). Context is
-// optional; Enter in the name field or the Create button commits. Portaled to
-// body so it floats above the canvas, over a light scrim (not a full fade).
-function NewCanvasDialog({
-  folders,
-  defaultFolderId,
-  onCancel,
-  onCreate,
-}: {
-  folders: Folder[];
-  defaultFolderId: string | null;
-  onCancel: () => void;
-  onCreate: (name: string, context: string, folderId: string | null) => void;
-}) {
-  const [name, setName] = useState("");
-  const [context, setContext] = useState("");
-  const [folderId, setFolderId] = useState<string | null>(defaultFolderId);
-  const nameRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    nameRef.current?.focus();
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onCancel();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
-
-  const dialog = (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="New canvas"
-      onClick={onCancel}
-      onPointerDown={(e) => e.stopPropagation()}
-      className="pointer-events-auto fixed inset-0 z-[700] grid place-items-center bg-black/30 px-6"
-    >
-      <form
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={(e) => {
-          e.preventDefault();
-          onCreate(name, context, folderId);
-        }}
-        className="w-full max-w-md rounded-panel border border-hairline bg-elevated p-5 shadow-[var(--shadow-panel)]"
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <div className="text-[15px] font-medium tracking-tight text-text-primary">
-            New canvas
-          </div>
-          <button
-            type="button"
-            onClick={onCancel}
-            aria-label="Close"
-            className="grid h-7 w-7 place-items-center rounded-button text-text-tertiary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
-          >
-            <X className="h-4 w-4" aria-hidden />
-          </button>
-        </div>
-
-        <label className="mb-1.5 block text-[12px] font-medium text-text-primary">
-          Name
-        </label>
-        <input
-          ref={nameRef}
-          value={name}
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Name your canvas"
-          className="mb-4 w-full rounded-button border border-hairline bg-elevated px-3 py-2 text-[14px] text-text-primary placeholder:text-text-tertiary outline-none focus:border-hairline-hover transition-colors duration-100"
-        />
-
-        <label className="mb-1.5 block text-[12px] font-medium text-text-primary">
-          What&apos;s this canvas about?{" "}
-          <span className="font-normal text-text-tertiary">optional</span>
-        </label>
-        <textarea
-          value={context}
-          onChange={(e) => setContext(e.currentTarget.value)}
-          placeholder="Goals, the question you're chasing, who it's for."
-          rows={3}
-          className="w-full resize-y rounded-button border border-hairline bg-elevated px-3 py-2 text-[13px] leading-relaxed text-text-primary placeholder:text-text-tertiary outline-none focus:border-hairline-hover transition-colors duration-100"
-        />
-        <p className="mt-2 text-[11px] leading-relaxed text-text-tertiary">
-          Fed to the AI on every chat and artifact in this canvas, so you do not
-          have to restate it.
-        </p>
-
-        <label className="mb-1.5 mt-4 block text-[12px] font-medium text-text-primary">
-          Folder
-        </label>
-        <FolderSelect folders={folders} value={folderId} onChange={setFolderId} />
-
-        <div className="mt-5 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="h-8 rounded-button px-3 text-[13px] text-text-secondary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className="h-8 rounded-button bg-accent px-3.5 text-[13px] font-medium text-on-accent transition-opacity duration-100 hover:opacity-90"
-          >
-            Create canvas
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-
-  if (typeof document === "undefined" || !document.body) return dialog;
-  return createPortal(dialog, document.body);
 }

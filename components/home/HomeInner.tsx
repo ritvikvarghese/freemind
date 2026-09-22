@@ -20,6 +20,9 @@ import { isOnboarded, markOnboarded } from "@/lib/storage/onboarding";
 import { ApiKeyPanel } from "@/components/settings/ApiKeyPanel";
 import { NameFolderDialog } from "@/components/folders/NameFolderDialog";
 import { FolderSelect } from "@/components/folders/FolderSelect";
+import { NewCanvasDialog } from "@/components/boards/NewCanvasDialog";
+import { RowAddMenu } from "@/components/boards/RowAddMenu";
+import { indentStep } from "@/lib/folders/indent";
 import { ToastProvider, ToastBridge } from "@/components/canvas/toast";
 import {
   createBoard,
@@ -33,6 +36,8 @@ import {
   moveBoardToFolder,
   placeFolderBefore,
   moveFolderToParent,
+  canNestFolderUnder,
+  folderSubtreeIds,
   useFolders,
   type Board,
   type Folder,
@@ -44,7 +49,9 @@ import {
 type FolderDnd = {
   draggingId: string | null; // board being dragged
   draggingFolderId: string | null; // folder being dragged
-  draggingFolderHasChildren: boolean; // dragged folder has subfolders (2-level cap)
+  // True when the folder currently being dragged may be nested under `fid`.
+  // False for `fid` inside the dragged folder's own subtree, which would cycle.
+  canNestInto: (fid: string) => boolean;
   overId: string | null; // board hovered (reorder target)
   overFolderId: string | null; // folder hovered by a dragged board (drop-in)
   overFolderRowId: string | null; // folder hovered by a dragged folder
@@ -55,6 +62,7 @@ type FolderDnd = {
   onToggle: (id: string) => void;
   onDeleteFolder: (id: string) => void;
   onNewSubfolder: (parentId: string) => void;
+  onNewCanvasInFolder: (folderId: string) => void;
   // boards
   onBoardDragStart: (id: string) => void;
   onBoardDragEnter: (id: string) => void;
@@ -71,6 +79,7 @@ type FolderDnd = {
   // data lookups (for recursion)
   folderBoards: (fid: string) => Board[];
   subfoldersOf: (fid: string) => Folder[];
+  subtreeIds: (fid: string) => string[];
 };
 
 // Home page body. Rendered via dynamic(() => ..., { ssr: false }) so the
@@ -104,6 +113,9 @@ export function HomeInner() {
   const [namingFolder, setNamingFolder] = useState<{
     parentId?: string;
   } | null>(null);
+  // New-canvas dialog opened from a folder row's + button; holds the folder the
+  // canvas lands in by default (the picker inside stays editable).
+  const [newCanvasFolderId, setNewCanvasFolderId] = useState<string | null>(null);
   const router = useRouter();
 
   // First run only: send a brand-new, keyless visitor straight into the seeded
@@ -228,9 +240,9 @@ export function HomeInner() {
   // exists, so a board can never silently vanish if a folder delete half-failed.
   const folderIds = new Set(folders.map((f) => f.id));
   const topLevel = boards.filter((b) => !b.folderId || !folderIds.has(b.folderId));
-  const draggingFolderHasChildren =
+  const canNestInto = (fid: string) =>
     draggingFolderId !== null &&
-    folders.some((f) => f.parentId === draggingFolderId);
+    canNestFolderUnder(folders, draggingFolderId, fid);
 
   const onFolderDragOverRow = (id: string, mode: "before" | "inside") => {
     setOverFolderRowId(id);
@@ -240,7 +252,7 @@ export function HomeInner() {
   const dnd: FolderDnd = {
     draggingId,
     draggingFolderId,
-    draggingFolderHasChildren,
+    canNestInto,
     overId,
     overFolderId,
     overFolderRowId,
@@ -249,6 +261,7 @@ export function HomeInner() {
     onToggle: toggleExpand,
     onDeleteFolder: deleteFolder,
     onNewSubfolder: handleNewSubfolder,
+    onNewCanvasInFolder: setNewCanvasFolderId,
     onBoardDragStart: setDraggingId,
     onBoardDragEnter: setOverId,
     onBoardDragEnd: clearDrag,
@@ -262,6 +275,7 @@ export function HomeInner() {
     onFolderDrop: handleFolderDrop,
     folderBoards: (fid) => boards.filter((b) => b.folderId === fid),
     subfoldersOf: (fid) => folders.filter((f) => f.parentId === fid),
+    subtreeIds: (fid) => folderSubtreeIds(folders, fid),
   };
 
   // Render nothing while the first-run redirect is in flight (the effect above
@@ -420,7 +434,7 @@ export function HomeInner() {
       ) : (
         <ul className="space-y-0.5">
           {topFolders.map((f) => (
-            <FolderRow key={f.id} folder={f} isSubfolder={false} dnd={dnd} />
+            <FolderRow key={f.id} folder={f} depth={0} dnd={dnd} />
           ))}
           {topLevel.map((b) => (
             <BoardRow
@@ -455,6 +469,19 @@ export function HomeInner() {
           onCreate={handleCreateFolder}
         />
       ) : null}
+
+      {newCanvasFolderId !== null ? (
+        <NewCanvasDialog
+          folders={folders}
+          defaultFolderId={newCanvasFolderId}
+          onCancel={() => setNewCanvasFolderId(null)}
+          onCreate={(name, ctx, folderId) => {
+            const board = createBoard(name, ctx, folderId);
+            setNewCanvasFolderId(null);
+            router.push(`/b/${board.id}`);
+          }}
+        />
+      ) : null}
       </main>
     </ToastProvider>
   );
@@ -462,23 +489,26 @@ export function HomeInner() {
 
 function FolderRow({
   folder,
-  isSubfolder,
+  depth,
   dnd,
 }: {
   folder: Folder;
-  isSubfolder: boolean;
+  // How deep this row sits (0 = top level). Only used to stop the indent from
+  // eating the row at depth; nesting itself is unbounded.
+  depth: number;
   dnd: FolderDnd;
 }) {
   const [editing, setEditing] = useState(false);
 
   const collapsed = !dnd.expanded.has(folder.id);
   const boards = dnd.folderBoards(folder.id);
-  const subfolders = isSubfolder ? [] : dnd.subfoldersOf(folder.id);
-  // Total canvases under this folder, including those nested in its subfolders
-  // (nesting is capped at 2 levels, so subfolders have no further children).
-  const childCount =
-    boards.length +
-    subfolders.reduce((n, sf) => n + dnd.folderBoards(sf.id).length, 0);
+  const subfolders = dnd.subfoldersOf(folder.id);
+  // Every canvas anywhere beneath this folder, at any depth.
+  const childCount = dnd
+    .subtreeIds(folder.id)
+    .reduce((n, fid) => n + dnd.folderBoards(fid).length, 0);
+
+  const childIndent = indentStep(depth, 14);
 
   const isDraggingSelf = dnd.draggingFolderId === folder.id;
   const isBoardDropTarget =
@@ -487,10 +517,9 @@ function FolderRow({
     dnd.overFolderRowId === folder.id &&
     dnd.draggingFolderId !== null &&
     dnd.draggingFolderId !== folder.id;
-  // Nesting is only allowed into a top-level folder by a childless folder
-  // (2-level cap). The middle zone reads as "inside" only when that holds.
-  const canNest =
-    folder.parentId === undefined && !dnd.draggingFolderHasChildren;
+  // The middle zone reads as "inside" only when the drop is actually legal,
+  // i.e. this row is not inside the dragged folder's own subtree.
+  const canNest = dnd.canNestInto(folder.id);
   const folderInside =
     isFolderHovered && dnd.folderDropMode === "inside" && canNest;
   const folderBefore = isFolderHovered && !folderInside;
@@ -567,17 +596,12 @@ function FolderRow({
             </span>
           </button>
         )}
-        {!isSubfolder ? (
-          <button
-            type="button"
-            aria-label={`New subfolder in ${folder.name}`}
-            title="New subfolder"
-            onClick={() => dnd.onNewSubfolder(folder.id)}
-            className="grid h-7 w-7 place-items-center rounded-button text-text-tertiary opacity-0 transition-opacity duration-100 hover:bg-surface-hover hover:text-text-primary focus-visible:opacity-100 group-hover:opacity-100"
-          >
-            <FolderPlus className="h-3.5 w-3.5" aria-hidden />
-          </button>
-        ) : null}
+        <RowAddMenu
+          folderName={folder.name}
+          onNewFolder={() => dnd.onNewSubfolder(folder.id)}
+          onNewCanvas={() => dnd.onNewCanvasInFolder(folder.id)}
+          className="grid h-7 w-7 place-items-center rounded-button text-text-tertiary opacity-0 transition-opacity duration-100 hover:bg-surface-hover hover:text-text-primary focus-visible:opacity-100 group-hover:opacity-100"
+        />
         <button
           type="button"
           aria-label={`Rename ${folder.name}`}
@@ -603,9 +627,12 @@ function FolderRow({
 
       {!collapsed ? (
         subfolders.length + boards.length > 0 ? (
-          <ul className="ml-[14px] mt-0.5 space-y-0.5 border-l border-hairline pl-1">
+          <ul
+            style={{ marginLeft: childIndent }}
+            className="mt-0.5 space-y-0.5 border-l border-hairline pl-1"
+          >
             {subfolders.map((sf) => (
-              <FolderRow key={sf.id} folder={sf} isSubfolder dnd={dnd} />
+              <FolderRow key={sf.id} folder={sf} depth={depth + 1} dnd={dnd} />
             ))}
             {boards.map((b) => (
               <BoardRow
@@ -622,7 +649,10 @@ function FolderRow({
             ))}
           </ul>
         ) : (
-          <div className="ml-[14px] mt-0.5 border-l border-hairline py-1 pl-3 text-[12px] text-text-tertiary">
+          <div
+            style={{ marginLeft: childIndent }}
+            className="mt-0.5 border-l border-hairline py-1 pl-3 text-[12px] text-text-tertiary"
+          >
             Drag a canvas here
           </div>
         )

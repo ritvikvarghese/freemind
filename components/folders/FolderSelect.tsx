@@ -4,14 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Folder as FolderIcon, ChevronDown, Check } from "lucide-react";
 import { type Folder } from "@/lib/storage/boards";
+import { indentFor } from "@/lib/folders/indent";
 
 type Option = { id: string | null; label: string; depth: number };
 
 /**
  * Compact folder picker for choosing where a new canvas lands. Lists "No folder"
- * plus every folder, with subfolders indented under their parent (nesting is
- * capped at two levels). Modeled on the toolbar's FontMenu: a button that opens
- * a portaled, fixed-position menu so it can't be clipped by a dialog's overflow.
+ * plus every folder, each indented under its parent to whatever depth the tree
+ * goes. Modeled on the toolbar's FontMenu: a button that opens a portaled,
+ * fixed-position menu so it can't be clipped by a dialog's overflow.
  */
 export function FolderSelect({
   folders,
@@ -29,18 +30,16 @@ export function FolderSelect({
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  // "No folder" first, then each top-level folder followed by its subfolders.
+  // "No folder" first, then a depth-first walk so every folder appears directly
+  // under its parent. Stored order is preserved within each level.
   const options: Option[] = [{ id: null, label: "No folder", depth: 0 }];
-  for (const top of folders.filter((f) => !f.parentId)) {
-    options.push({ id: top.id, label: top.name || "Untitled folder", depth: 0 });
-    for (const sub of folders.filter((f) => f.parentId === top.id)) {
-      options.push({
-        id: sub.id,
-        label: sub.name || "Untitled folder",
-        depth: 1,
-      });
+  const walk = (parentId: string | undefined, depth: number) => {
+    for (const f of folders.filter((x) => x.parentId === parentId)) {
+      options.push({ id: f.id, label: f.name || "Untitled folder", depth });
+      walk(f.id, depth + 1);
     }
-  }
+  };
+  walk(undefined, 0);
 
   const current = options.find((o) => o.id === value) ?? options[0];
 
@@ -107,7 +106,7 @@ export function FolderSelect({
                   // pick.
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => choose(opt.id)}
-                  style={{ paddingLeft: 8 + opt.depth * 16 }}
+                  style={{ paddingLeft: 8 + indentFor(opt.depth, 16) }}
                   className="flex w-full items-center gap-2 rounded-button py-1.5 pr-2 text-left text-[13px] text-text-secondary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
                 >
                   <FolderIcon

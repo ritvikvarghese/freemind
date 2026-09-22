@@ -47,3 +47,7 @@ next-env.d.ts
 # local data backups (personal content — never commit the JSON dumps)
 /backups/*
 !/backups/README.md
+
+# detached local server (log + pid from running pnpm start in the background)
+/.freemind-server.log
+/.freemind-server.pid

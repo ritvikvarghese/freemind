@@ -38,9 +38,9 @@ export type Folder = {
   name: string;
   createdAt: number; // epoch ms
   /**
-   * Parent folder this folder is nested under. Absent = top level. One level of
-   * nesting max (a folder with a `parentId` can never itself be a parent), so
-   * the tree is at most two deep. Additive; no migration.
+   * Parent folder this folder is nested under. Absent = top level. Nesting is
+   * unbounded; the only structural invariant is that the graph stays acyclic,
+   * enforced by `canNestFolderUnder` on every reparent. Additive; no migration.
    */
   parentId?: string;
 };
@@ -364,16 +364,13 @@ export function getFolders(): Folder[] {
   return foldersCache;
 }
 
-// Create a folder. Pass `parentId` to nest it under a top-level folder. The
-// 2-level cap is enforced here: a parentId is only honored when it points to a
-// folder that is itself top-level (no grandchildren allowed).
+// Create a folder. Pass `parentId` to nest it under any existing folder, at any
+// depth. A parentId that no longer resolves is dropped rather than stored, so a
+// folder deleted mid-dialog yields a top-level folder instead of an orphan.
 export function createFolder(name: string, parentId?: string): Folder {
   const folders = getFolders();
-  let pid: string | undefined;
-  if (parentId) {
-    const parent = folders.find((f) => f.id === parentId);
-    if (parent && parent.parentId === undefined) pid = parentId;
-  }
+  const pid =
+    parentId && folders.some((f) => f.id === parentId) ? parentId : undefined;
   const folder: Folder = {
     id: crypto.randomUUID(),
     name: name.trim() || "New folder",
@@ -384,8 +381,51 @@ export function createFolder(name: string, parentId?: string): Folder {
   return folder;
 }
 
-function folderHasChildren(folders: Folder[], id: string): boolean {
-  return folders.some((f) => f.parentId === id);
+// True when `id` may be reparented under `parentId`. Nesting is unbounded, so
+// the one thing that can corrupt the tree is a cycle: dropping a folder onto its
+// own descendant would detach that whole subtree from every root and strand it
+// out of the UI with no way to drag it back. Under the old 2-level cap a cycle
+// was unreachable, so nothing checked for one.
+export function canNestFolderUnder(
+  folders: Folder[],
+  id: string,
+  parentId: string,
+): boolean {
+  if (parentId === id) return false;
+  const byId = new Map(folders.map((f) => [f.id, f]));
+  let cur = byId.get(parentId)?.parentId;
+  // Bounded by the folder count so malformed data can never spin forever.
+  for (let hops = 0; cur !== undefined && hops <= folders.length; hops++) {
+    if (cur === id) return false;
+    cur = byId.get(cur)?.parentId;
+  }
+  return true;
+}
+
+// `id` plus every folder beneath it, at any depth. Powers the recursive canvas
+// count on a folder row.
+export function folderSubtreeIds(folders: Folder[], id: string): string[] {
+  const childrenOf = new Map<string, string[]>();
+  for (const f of folders) {
+    if (f.parentId === undefined) continue;
+    const list = childrenOf.get(f.parentId);
+    if (list) list.push(f.id);
+    else childrenOf.set(f.parentId, [f.id]);
+  }
+  const out: string[] = [];
+  const stack = [id];
+  // Guarded against cycles in stored data, which `canNestFolderUnder` prevents
+  // us from creating but a hand-edited localStorage payload could still hold.
+  const seen = new Set<string>();
+  while (stack.length) {
+    const cur = stack.pop() as string;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    out.push(cur);
+    const kids = childrenOf.get(cur);
+    if (kids) stack.push(...kids);
+  }
+  return out;
 }
 
 function omitParentId(f: Folder): Folder {
@@ -398,8 +438,8 @@ function omitParentId(f: Folder): Folder {
 // The single drag gesture for folders: make `draggedId` a sibling of `targetId`
 // (adopting the target's parent) and place it immediately before the target.
 // Same parent → pure reorder. Different parent → move between levels (promote a
-// subfolder, or nest a top-level folder next to an existing subfolder). Enforces
-// the 2-level cap and prevents making a folder its own parent.
+// subfolder, or nest a folder next to an existing one at any depth). Refuses any
+// move that would put a folder inside its own subtree.
 export function placeFolderBefore(draggedId: string, targetId: string): void {
   if (draggedId === targetId) return;
   const folders = getFolders();
@@ -407,9 +447,10 @@ export function placeFolderBefore(draggedId: string, targetId: string): void {
   const target = folders.find((f) => f.id === targetId);
   if (!dragged || !target) return;
   const newParent = target.parentId; // undefined = top level
-  if (newParent === draggedId) return; // can't nest a folder under itself
-  // 2-level cap: a folder that has subfolders can't itself become nested.
-  if (newParent !== undefined && folderHasChildren(folders, draggedId)) return;
+  const intoSubtree =
+    newParent !== undefined &&
+    !canNestFolderUnder(folders, draggedId, newParent);
+  if (intoSubtree) return;
 
   const reparented = folders.map((f) =>
     f.id === draggedId
@@ -433,7 +474,8 @@ export function placeFolderBefore(draggedId: string, targetId: string): void {
 }
 
 // Move a folder to a specific parent (or to the top level with `null`). Used by
-// the CANVASES-header drop (promote to top). Enforces the 2-level cap.
+// the CANVASES-header drop (promote to top) and by dropping a folder onto a
+// folder row. Refuses a move into the folder's own subtree.
 export function moveFolderToParent(
   id: string,
   parentId: string | null,
@@ -447,9 +489,8 @@ export function moveFolderToParent(
     return;
   }
   if (parentId === id || folder.parentId === parentId) return;
-  const parent = folders.find((f) => f.id === parentId);
-  if (!parent || parent.parentId !== undefined) return; // parent must be top-level
-  if (folderHasChildren(folders, id)) return; // would exceed 2 levels
+  if (!folders.some((f) => f.id === parentId)) return;
+  if (!canNestFolderUnder(folders, id, parentId)) return;
   writeFolders(folders.map((f) => (f.id === id ? { ...f, parentId } : f)));
 }
 

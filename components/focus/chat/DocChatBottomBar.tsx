@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Editor } from "@tiptap/core";
-import { MessageSquare, MessagesSquare } from "lucide-react";
+import { MessageSquare, MessagesSquare, SquarePlus } from "lucide-react";
 
 type Props = {
   editor: Editor | null;
@@ -15,6 +15,8 @@ type Props = {
   onLaunch: () => void;
   /** Add the current selection to the chat (opens/seeds one if needed). */
   onAddToChat: (selectionText: string) => void;
+  /** Drop the current selection onto the canvas as a text node. */
+  onCopyToCanvas: (selectionText: string) => void;
 };
 
 /**
@@ -30,6 +32,7 @@ export function DocChatBottomBar({
   disabled,
   onLaunch,
   onAddToChat,
+  onCopyToCanvas,
 }: Props) {
   const [selText, setSelText] = useState("");
 
@@ -57,15 +60,32 @@ export function DocChatBottomBar({
       className="pointer-events-none absolute inset-y-0 left-0 z-30"
       style={{ right: rightInset }}
     >
-      {editor && selText && !disabled ? (
-        <button
-          type="button"
-          onClick={() => onAddToChat(selText)}
-          className="pointer-events-auto absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-button bg-accent px-3.5 py-2 text-[12.5px] font-medium text-on-accent shadow-[var(--shadow-floating)] transition-opacity duration-100 hover:opacity-90"
-        >
-          <MessagesSquare className="h-4 w-4" aria-hidden />
-          Add to chat
-        </button>
+      {editor && selText ? (
+        <div className="pointer-events-auto absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-2">
+          {!disabled ? (
+            <button
+              type="button"
+              onClick={() => onAddToChat(selText)}
+              className="flex items-center gap-2 rounded-button bg-accent px-3.5 py-2 text-[12.5px] font-medium text-on-accent shadow-[var(--shadow-floating)] transition-opacity duration-100 hover:opacity-90"
+            >
+              <MessagesSquare className="h-4 w-4" aria-hidden />
+              Add to chat
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              onCopyToCanvas(selText);
+              // Collapse the selection so the pill dismisses, matching the
+              // upload view's copy-to-canvas (which clears the selection too).
+              editor.commands.setTextSelection(editor.state.selection.to);
+            }}
+            className="flex items-center gap-2 rounded-button bg-accent px-3.5 py-2 text-[12.5px] font-medium text-on-accent shadow-[var(--shadow-floating)] transition-opacity duration-100 hover:opacity-90"
+          >
+            <SquarePlus className="h-4 w-4" aria-hidden />
+            Copy to canvas
+          </button>
+        </div>
       ) : null}
 
       {!chatOpen ? (

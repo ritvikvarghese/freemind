@@ -1,8 +1,6 @@
 # Freemind
 
-Freemind is a spatial canvas for research. You drop PDFs, images, markdown files, and YouTube links onto an infinite canvas, select the ones you care about, write a prompt, and Claude writes back a document that streams in next to your sources. From there you can edit it, annotate it, and export it.
-
-It runs on your own machine. There are no accounts and nothing in the cloud. Your boards live in your browser and your Anthropic key stays on your laptop. Clone it, add your key, and go.
+Freemind is a spatial canvas for research. Drop PDFs, images, markdown files, and YouTube links onto an infinite canvas, select and research them with AI. No accounts, 100% local, lives in your browser and your API key stays on your device. 
 
 ## Running it
 
@@ -11,9 +9,11 @@ pnpm install
 pnpm use
 ```
 
-Open http://localhost:3000. On first run, add your Anthropic key (see below). That is the only setup.
+Open http://localhost:3000 or any other. On first run, add your Anthropic key (see below). That is the only setup.
 
-`pnpm use` builds the app and serves it, which is the normal way to run it. For development with hot reload, use `pnpm dev` instead. You need Node 20 or newer and pnpm 10; the postinstall step copies the pdf.js worker into `public/`.
+`pnpm use` builds the app and serves it, which is the normal way to run it. 
+`pnpm dev` for development instead. 
+You need Node 20 or newer and pnpm 10; the postinstall step copies the pdf.js worker into `public/`.
 
 ## Your API key
 

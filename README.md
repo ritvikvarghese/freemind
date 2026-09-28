@@ -11,9 +11,9 @@ pnpm use
 
 Open http://localhost:3000 or any other. On first run, add your Anthropic key (see below). That is the only setup.
 
-`pnpm use` builds the app and serves it, which is the normal way to run it. 
-`pnpm dev` for development instead. 
-You need Node 20 or newer and pnpm 10; the postinstall step copies the pdf.js worker into `public/`.
+- `pnpm use` builds the app and serves it, which is the normal way to run it.
+- `pnpm dev` runs it in development mode with hot reload, for working on the code.
+- You need Node 20 or newer and pnpm 10; the postinstall step copies the pdf.js worker into `public/`.
 
 ## Your API key
 

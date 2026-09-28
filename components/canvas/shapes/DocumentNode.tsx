@@ -261,11 +261,25 @@ export class DocumentNodeUtil extends BaseBoxShapeUtil<DocumentNodeShape> {
   }
 }
 
+// The card shows only the top of a document (the body is overflow-hidden), but
+// re-rendering all of it on every autosave (every equation re-typeset, every
+// table rebuilt) made typing in a long document hitch. Render a prefix that
+// comfortably overfills even a very tall card, cut at a blank line so tables
+// and `$$` equations are never split.
+const PREVIEW_CHARS = 8000;
+
+function clipForPreview(markdown: string): string {
+  if (markdown.length <= PREVIEW_CHARS) return markdown;
+  const cut = markdown.indexOf("\n\n", PREVIEW_CHARS);
+  return cut === -1 ? markdown : markdown.slice(0, cut);
+}
+
 function DocumentNodeBody({ shape }: { shape: DocumentNodeShape }) {
   const editor = useEditor();
   const { status, title, markdown, thinking, errorMessage, sourcesUsed, sourceSnapshots } =
     shape.props;
   const isInProgress = status === "researching" || status === "streaming";
+  const previewMarkdown = useMemo(() => clipForPreview(markdown), [markdown]);
   const sourceCount = useMemo(
     () => sourcesUsed.reduce((acc, s) => acc + s.urls.length, 0),
     [sourcesUsed],
@@ -363,7 +377,7 @@ function DocumentNodeBody({ shape }: { shape: DocumentNodeShape }) {
           <>
             <div className="h-full overflow-hidden text-[13px] leading-relaxed text-text-primary canvas-ai-doc-preview">
               {markdown ? (
-                <MarkdownView>{markdown}</MarkdownView>
+                <MarkdownView>{previewMarkdown}</MarkdownView>
               ) : thinking ? (
                 // Live chain-of-thought before the document text starts.
                 <div className="space-y-1.5">

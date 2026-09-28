@@ -12,7 +12,7 @@ import {
 const MAX_EDGE = 1568;
 const JPEG_QUALITY = 0.9;
 const STAGGER = 24;
-const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 export async function ingestImages(
   editor: Editor,
@@ -120,7 +120,7 @@ export async function readImageText(
   });
 }
 
-type PreparedImage = {
+export type PreparedImage = {
   dataUrl: string;
   base64: string;
   mediaType: ImageMediaType;
@@ -131,7 +131,7 @@ type PreparedImage = {
 
 // Downscale to MAX_EDGE on the long side and re-encode as JPEG. Returns both
 // the data URL (for rendering / persistence) and the bare base64 (for the API).
-async function prepareImage(file: File): Promise<PreparedImage> {
+export async function prepareImage(file: File): Promise<PreparedImage> {
   // Animated formats (GIF, animated WebP) are kept byte-for-byte. Re-encoding
   // through a canvas flattens them to a single static frame, killing the
   // animation; storing the original bytes lets the <img> play them. Static

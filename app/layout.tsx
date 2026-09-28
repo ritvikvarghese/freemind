@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono, Newsreader } from "next/font/google";
+import "katex/dist/katex.min.css";
 import "./globals.css";
 import { StorageGuard } from "@/components/StorageGuard";
 import { VersionWatcher } from "@/components/VersionWatcher";

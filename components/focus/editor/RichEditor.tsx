@@ -12,6 +12,9 @@ import type { Editor } from "@tiptap/core";
 import { buildExtensions } from "./extensions";
 import { SlashMenu } from "./SlashMenu";
 import { BubbleToolbar, FONT_OPTIONS, type DocFont } from "./BubbleToolbar";
+import { imageFiles, insertImageFiles } from "./insertImages";
+import { TableControls } from "./TableControls";
+import { ImageControls } from "./ImageControls";
 
 type Props = {
   initialMarkdown: string;
@@ -60,8 +63,8 @@ const SERIALIZE_DEBOUNCE_MS = 200;
  * Tiptap-backed rich editor. Markdown is the canonical persisted format —
  * the editor parses it on mount and serializes back on every change.
  *
- * Image paste from the clipboard converts to a data URL (consistent with the
- * canvas "Add image" flow which also stores images base64 in IndexedDB).
+ * Images (paste, drop, slash menu) are stored inline as downscaled data URLs,
+ * consistent with canvas images; see `insertImages.ts` and `clipboard.ts`.
  */
 export const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEditor(
   {
@@ -108,28 +111,6 @@ export const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEdito
           class: "canvas-ai-prose focus:outline-none",
           spellcheck: "true",
         },
-        handlePaste: (view, event) => {
-          const items = event.clipboardData?.items;
-          if (!items) return false;
-          for (const it of Array.from(items)) {
-            if (it.kind === "file" && it.type.startsWith("image/")) {
-              event.preventDefault();
-              const file = it.getAsFile();
-              if (!file) return true;
-              fileToDataUrl(file).then((dataUrl) => {
-                const { state, dispatch } = view;
-                const node = state.schema.nodes.image?.create({
-                  src: dataUrl,
-                  alt: file.name,
-                });
-                if (!node) return;
-                dispatch(state.tr.replaceSelectionWith(node));
-              });
-              return true;
-            }
-          }
-          return false;
-        },
       },
       onUpdate: ({ editor: ed }) => {
         if (serializeTimer.current !== null) {
@@ -154,6 +135,38 @@ export const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEdito
     },
     [],
   );
+
+  // Files dropped on the page around the text column (margins, below the last
+  // line) never reach ProseMirror, so the browser would open them. Catch them
+  // on the scroll surface and insert at the nearest point in the text instead.
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    const surface =
+      (wrapper?.closest(".canvas-ai-focus-paper") as HTMLElement | null) ?? wrapper;
+    if (!editor || !surface) return;
+    const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes("Files") ?? false;
+    const onDragOver = (e: DragEvent) => {
+      if (hasFiles(e)) e.preventDefault();
+    };
+    const onDrop = (e: DragEvent) => {
+      if (e.defaultPrevented || !hasFiles(e)) return;
+      e.preventDefault();
+      const images = imageFiles(e.dataTransfer?.files);
+      if (!images.length || !editor.isEditable) return;
+      const r = editor.view.dom.getBoundingClientRect();
+      const at = editor.view.posAtCoords({
+        left: Math.min(Math.max(e.clientX, r.left + 1), r.right - 1),
+        top: Math.min(Math.max(e.clientY, r.top + 1), r.bottom - 1),
+      });
+      void insertImageFiles(editor.view, images, at?.pos ?? editor.state.doc.content.size);
+    };
+    surface.addEventListener("dragover", onDragOver);
+    surface.addEventListener("drop", onDrop);
+    return () => {
+      surface.removeEventListener("dragover", onDragOver);
+      surface.removeEventListener("drop", onDrop);
+    };
+  }, [editor]);
 
   useImperativeHandle(
     ref,
@@ -198,16 +211,13 @@ export const RichEditor = forwardRef<RichEditorHandle, Props>(function RichEdito
         fontControl={fontControl}
       />
       <EditorContent editor={editor} />
+      {editable ? (
+        <>
+          <TableControls editor={editor} wrapperRef={wrapperRef} />
+          <ImageControls editor={editor} wrapperRef={wrapperRef} />
+        </>
+      ) : null}
       {overlay ? overlay({ editor, wrapperRef }) : null}
     </div>
   );
 });
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}

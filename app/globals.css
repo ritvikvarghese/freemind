@@ -220,6 +220,31 @@ body {
 .canvas-ai-doc-preview strong {
   color: var(--color-text-primary);
 }
+.canvas-ai-doc-preview table {
+  border-collapse: collapse;
+  margin: 4px 0 8px;
+  font-size: 12px;
+}
+.canvas-ai-doc-preview th,
+.canvas-ai-doc-preview td {
+  border: 1px solid var(--color-hairline);
+  padding: 3px 6px;
+  text-align: left;
+  vertical-align: top;
+}
+.canvas-ai-doc-preview th {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+.canvas-ai-doc-preview img {
+  max-width: 100%;
+  border-radius: 4px;
+}
+.canvas-ai-doc-preview .katex-display {
+  margin: 4px 0 8px;
+  overflow: hidden;
+}
 
 /* Reader-note highlight, painted via the CSS Custom Highlight API over live
    Ranges (see lib/notes/highlight.ts) so React keeps DOM ownership. A classic
@@ -378,6 +403,45 @@ body {
 .canvas-ai-prose th {
   background: var(--color-surface-hover);
   font-weight: 600;
+}
+
+.canvas-ai-prose th p,
+.canvas-ai-prose td p {
+  margin: 0;
+}
+.canvas-ai-prose th,
+.canvas-ai-prose td {
+  vertical-align: top;
+}
+
+/* Editor tables: room below for the "Add row" bar, horizontal scroll for wide
+   tables, and a tint on cells in a multi-cell selection. */
+.canvas-ai-rich-editor .tableWrapper {
+  overflow-x: auto;
+}
+.canvas-ai-rich-editor table {
+  margin-bottom: 30px;
+}
+.canvas-ai-rich-editor th,
+.canvas-ai-rich-editor td {
+  position: relative;
+  min-width: 4em;
+}
+.canvas-ai-rich-editor .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--color-selection);
+  opacity: 0.15;
+  pointer-events: none;
+}
+
+/* Display equations (editor block and rendered markdown). */
+.canvas-ai-math .katex-display,
+.canvas-ai-prose .katex-display {
+  margin: 0.4em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 /* Tiptap placeholder for empty editor. */

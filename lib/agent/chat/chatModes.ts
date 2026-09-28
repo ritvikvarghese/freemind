@@ -1,5 +1,6 @@
 import type { AgentMode } from "@/lib/agent/modes";
 import type { SourceSnapshot } from "@/components/canvas/shapes/DocumentNode";
+import { stripInlineImages } from "@/lib/markdown/stripInlineImages";
 
 /**
  * Conversational, source-grounded system prompts for the canvas chat (distinct
@@ -40,7 +41,7 @@ function sourcesContext(sources: SourceSnapshot[]): string {
     const sid = `s${i + 1}`;
     const note =
       s.image ? " (image shown above)" : s.pdf ? " (scanned PDF shown above)" : "";
-    const body = s.text?.trim() ? s.text : "(no extractable text)";
+    const body = s.text?.trim() ? stripInlineImages(s.text) : "(no extractable text)";
     return `<source id="${sid}" title="${escapeAttr(s.title)}"${note ? ` note="${note.trim()}"` : ""}>\n${body}\n</source>`;
   });
   return `\n\nThe user's selected sources are below. Treat them as authoritative excerpts.\n<context>\n${blocks.join("\n")}\n</context>`;

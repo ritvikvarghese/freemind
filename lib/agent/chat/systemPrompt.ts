@@ -1,5 +1,6 @@
 import type { SourceSnapshot } from "@/components/canvas/shapes/DocumentNode";
 import { escapeXml } from "@/lib/string-utils";
+import { stripInlineImages } from "@/lib/markdown/stripInlineImages";
 
 export function buildChatSystemPrompt(
   markdown: string,
@@ -9,7 +10,7 @@ export function buildChatSystemPrompt(
   const sourceBlocks = sources
     .map(
       (s, i) =>
-        `  <source id="s${i + 1}" title="${escapeXml(s.title)}" kind="${s.kind}">\n${escapeXml(s.text)}\n  </source>`,
+        `  <source id="s${i + 1}" title="${escapeXml(s.title)}" kind="${s.kind}">\n${escapeXml(stripInlineImages(s.text))}\n  </source>`,
     )
     .join("\n");
 
@@ -31,7 +32,7 @@ export function buildChatSystemPrompt(
     "snapshots captured at the time the document was generated — they are read-only",
     "context for your suggestions.",
     "",
-    `<document>\n${markdown}\n</document>`,
+    `<document>\n${stripInlineImages(markdown)}\n</document>`,
     "",
     sourcesXml,
     "",

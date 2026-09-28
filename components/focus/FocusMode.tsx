@@ -159,6 +159,9 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
   // Esc to close — always flush before exit.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // Inputs inside the document (the equation source box) use Esc to leave
+      // themselves, not to close the document.
+      if ((e.target as HTMLElement | null)?.closest?.("[data-local-escape]")) return;
       if (e.key === "Escape") {
         e.stopPropagation();
         flush();

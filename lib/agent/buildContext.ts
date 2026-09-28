@@ -13,6 +13,7 @@ import type {
 } from "@/components/canvas/shapes/DocumentNode";
 import type { NotesNodeShape } from "@/components/canvas/shapes/NotesNode";
 import { notesToText } from "@/lib/notes/format";
+import { stripInlineImages } from "@/lib/markdown/stripInlineImages";
 
 export type SourceShape =
   | TextNodeShape
@@ -28,7 +29,7 @@ export type SourceShape =
 /** Raw text payload for a source shape — what the agent sees and what we snapshot. */
 export function sourceText(shape: SourceShape): string {
   if (shape.type === "canvas-ai-text") return shape.props.text;
-  if (shape.type === "canvas-ai-document") return shape.props.markdown;
+  if (shape.type === "canvas-ai-document") return stripInlineImages(shape.props.markdown);
   if (shape.type === "canvas-ai-image") return shape.props.ocrText;
   if (shape.type === "canvas-ai-link") return linkText(shape);
   if (shape.type === "canvas-ai-notes") return notesToText(shape.props.notes);
@@ -134,7 +135,7 @@ export function buildContext(
         id,
         sourceId,
         title,
-        text: shape.props.markdown,
+        text: stripInlineImages(shape.props.markdown),
       };
     }
     if (shape.type === "canvas-ai-image") {
@@ -315,7 +316,7 @@ export function snapshotSource(
         (shape.props.userPrompt.trim()
           ? truncate(shape.props.userPrompt, 80)
           : "Document"),
-      text: shape.props.markdown,
+      text: stripInlineImages(shape.props.markdown),
       capturedAt,
     };
   }

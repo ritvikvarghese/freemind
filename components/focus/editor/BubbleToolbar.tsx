@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/core";
+import { NodeSelection } from "@tiptap/pm/state";
 import { BubbleMenuPlugin } from "@tiptap/extension-bubble-menu";
 import {
   Bold,
@@ -81,10 +82,9 @@ export function BubbleToolbar({
       shouldShow: ({ editor: ed, from, to }) => {
         if (from === to) return false;
         if (!ed.isEditable) return false;
-        // Hide on image-only selection.
-        const node = ed.state.doc.nodeAt(from);
-        if (node && node.type.name === "image") return false;
-        return true;
+        // Hide when a whole block node is selected (image, equation, divider):
+        // there is no text to format.
+        return !(ed.state.selection instanceof NodeSelection);
       },
       options: {
         // `fixed` so Floating UI's coords resolve against the viewport rather

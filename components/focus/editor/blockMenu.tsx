@@ -16,8 +16,11 @@ import {
   Code,
   Minus,
   Image as ImageIcon,
+  Sigma,
+  Table as TableIcon,
 } from "lucide-react";
 import type { Editor, Range } from "@tiptap/core";
+import { insertImageFiles } from "./insertImages";
 
 /**
  * A single block command. `apply` transforms the document: when invoked from
@@ -183,9 +186,29 @@ export const BLOCK_ITEMS: BlockItem[] = [
       chain(editor, range).run();
       const file = await pickImageFile();
       if (!file) return;
-      const dataUrl = await fileToDataUrl(file);
-      editor.chain().focus().setImage({ src: dataUrl, alt: file.name }).run();
+      await insertImageFiles(editor.view, [file]);
     },
+  },
+  {
+    title: "Equation",
+    description: "LaTeX, rendered",
+    icon: <Sigma className="h-3.5 w-3.5" />,
+    keywords: ["equation", "math", "latex", "formula"],
+    apply: (editor, range) =>
+      // An empty equation opens with its source pane expanded (MathBlock).
+      chain(editor, range)
+        .insertContent({ type: "blockMath", attrs: { latex: "" } })
+        .run(),
+  },
+  {
+    title: "Table",
+    description: "Rows and columns",
+    icon: <TableIcon className="h-3.5 w-3.5" />,
+    keywords: ["table", "grid", "rows", "columns"],
+    apply: (editor, range) =>
+      chain(editor, range)
+        .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+        .run(),
   },
 ];
 
@@ -287,14 +310,5 @@ function pickImageFile(): Promise<File | null> {
       resolve(f);
     };
     input.click();
-  });
-}
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
   });
 }

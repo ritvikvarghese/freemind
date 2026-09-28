@@ -7,6 +7,11 @@ export type AgentMode = "freeform" | "deepsynth" | "deepsearch";
 const VISUAL_SOURCES_RULE =
   "Some sources are images or scanned documents: their picture is attached after the context block under the same source id. Read it directly and use what you actually see (charts, tables, figures, layout, handwriting), not just any accompanying text. Cite it by id like any other source, and do not describe detail that is not actually visible.";
 
+// Documents render `$$...$$` blocks as typeset equations. Single-dollar inline
+// math is deliberately not supported (it would eat prices like "$3,200").
+export const MATH_RULE =
+  "When an equation or formula helps, write it as a LaTeX display block: `$$` on its own line, the LaTeX, then `$$` on its own line. Never use single-dollar inline math; a lone $ always means a literal dollar sign.";
+
 const FREEFORM_SYSTEM_PROMPT = `You receive a set of sources and a user request. Follow the user's request exactly. The request decides the format, depth, and length. Do not impose a structure the user did not ask for.
 
 Rules that always apply:
@@ -15,6 +20,7 @@ Rules that always apply:
 - Do not use emojis.
 - When you use a provided source, cite it inline by its id, e.g. (source: s1).
 - ${VISUAL_SOURCES_RULE}
+- ${MATH_RULE}
 - When sources contain URLs that are relevant to the user's request, use the web_search tool to fetch them.
 - When you use the web, cite the URL inline.
 - If the sources cannot support what the user asked for, say so plainly rather than guessing.
@@ -42,6 +48,8 @@ Length: as long as the topic warrants. Do not artificially truncate. A serious r
 Format: pure markdown. No HTML, no front matter, no preamble like "Here is the document:". Just the document itself, starting with the H1. Do not use em dashes or en dashes. Rephrase, or use commas, periods, or parentheses instead (plain hyphens in compound words are fine). Do not use emojis.
 
 ${VISUAL_SOURCES_RULE}
+
+${MATH_RULE}
 
 The user's selected sources arrive inside <context>...</context> tags, each wrapped as <source id="sN" title="...">...</source>. Treat these as authoritative excerpts the user wants synthesized.`;
 
@@ -72,6 +80,7 @@ Rules that always apply:
 - Do not use emojis.
 - Cite provided sources inline by id, e.g. (source: s1). Quote sparingly but precisely when a phrase is doing real work.
 - ${VISUAL_SOURCES_RULE}
+- ${MATH_RULE}
 - If the sources genuinely cannot support a confident recommendation, say so plainly and describe what additional input would unblock the decision. Do not pad or guess.
 - Be concise. Target 300-700 words. A clean recommendation beats a long one. Length is earned only when the corpus is large and the trade-offs are real.
 

@@ -21,31 +21,16 @@ Freemind uses the Anthropic API with your own key. Get one at [console.anthropic
 
 ## What you can do with it
 
-Drop things on the canvas to use as sources:
+- Drop in notes, PDFs, markdown, images, and YouTube links as sources.
+- Select sources, pick a mode, and prompt:
+  - **Freeform**: chat about your sources.
+  - **Deepsynth**: a synthesis document from your sources only.
+  - **Deepsearch**: a cited research document using the web.
+  - **Create artifact**: turn sources straight into a document.
+- Edit documents in a full-screen editor with tables, equations, images, comments, and an AI side chat. Export to markdown or PDF.
+- Connect nodes, see which sources a document came from, and keep separate boards.
 
-- Text notes you type yourself.
-- PDFs and markdown files. Text is pulled out in the browser with pdf.js. If a PDF is a scan with no extractable text, Freemind sends the pages to Claude as images instead.
-- Images, which get OCR'd and also passed to the model as pictures.
-- YouTube links, which get turned into transcripts.
-
-Select a few sources, pick a mode, write a prompt, and press Enter. There are four modes:
-
-- **Freeform** chats with you about your sources, in whatever format you ask (Sonnet by default).
-- **Deepsynth** reasons across only your sources and writes a synthesis document, no web (Opus by default).
-- **Deepsearch** searches the web and writes a long, cited research document (Opus by default).
-- **Create artifact** turns your sources straight into a document, no back and forth.
-
-Chat is the default, so Freeform opens a side conversation while the other three write a document. Either way the document streams in next to whatever you selected, with the model's thinking shown as it works, and you can stop it from the document's header if it goes off the rails. You can also chat with the canvas or with any document and ask it to write findings straight into the doc.
-
-A few other things that help you think on the canvas:
-
-- Drag from the edge of one node to another to draw a connector. Hover the line and click the x to remove it.
-- Select a document and faint lines show which sources it came from.
-- Edit or delete a source after generating a document and that document gets a "sources changed" badge.
-- Double-click a document to open focus mode: a full-screen editor with a slash menu, inline images, comments, and a side chat that proposes edits you accept or reject. Export to markdown or print to PDF from there.
-- A small home page lets you keep separate boards.
-
-Everything is saved in the browser per board, so it survives a reload.
+Everything saves in your browser.
 
 ## Working on it
 

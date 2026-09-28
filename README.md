@@ -11,34 +11,13 @@ pnpm install
 pnpm use
 ```
 
-Open http://localhost:3000. On first run, click the **"Add your API key"** button in the top right and paste your Anthropic key (details just below). That is the only setup; everything else is ready to go.
+Open http://localhost:3000. On first run, add your Anthropic key (see below). That is the only setup.
 
 `pnpm use` builds the app and serves it, which is the normal way to run it. For development with hot reload, use `pnpm dev` instead. You need Node 20 or newer and pnpm 10; the postinstall step copies the pdf.js worker into `public/`.
 
-### Pick one address and stick with it
-
-Your boards and notes are stored in the browser, scoped to the exact address you open, **including the port**. `http://localhost:3000` and `http://localhost:3005` are treated as two completely separate sites with their own, independent data.
-
-So decide on one address for Freemind and always use it. If you switch ports later, your boards are not deleted, but they will not show up under the new address (they are still sitting under the old one).
-
-If something else on your machine already uses port 3000, run Freemind on a different port and then keep using that same one every time:
-
-```bash
-pnpm build
-pnpm exec next start -p 3005
-```
-
-Then open http://localhost:3005 (or whatever port you chose). If you want a portable copy of your boards regardless of port, use Export in Settings.
-
 ## Your API key
 
-Freemind talks to the Anthropic API straight from the browser, so you bring your own key. Get one at [console.anthropic.com](https://console.anthropic.com/settings/keys).
-
-The simplest way: when you open the app with no key set, an **"Add your API key"** button sits next to the gear in the top right. Click it (or the gear), paste your key, and it is checked with a single `models.list` call and saved to your browser's localStorage. That is it; the button goes away once the key is set.
-
-If you would rather use a file, copy `.env.local.example` to `.env.local` and set `NEXT_PUBLIC_ANTHROPIC_API_KEY`. If you do both, the key you saved in the app wins.
-
-One thing to be clear about: the key runs in the browser. Every request goes from your tab to Anthropic over HTTPS, which is fine on a machine that's only yours. Don't run this on a shared computer, don't screen-share with the network tab open, and don't host it anywhere public without putting a backend in front to hold the key. If a key ever leaks, rotate it in the Anthropic console.
+Freemind uses the Anthropic API with your own key. Get one at [console.anthropic.com](https://console.anthropic.com/settings/keys), then click **"Add your API key"** in the top right of the app and paste it.
 
 ## What you can do with it
 
@@ -67,37 +46,6 @@ A few other things that help you think on the canvas:
 - A small home page lets you keep separate boards.
 
 Everything is saved in the browser per board, so it survives a reload.
-
-## Configuration
-
-These are optional and all go in `.env.local`:
-
-- `NEXT_PUBLIC_ANTHROPIC_API_KEY`: your key, if you'd rather not use the in-app panel.
-- `NEXT_PUBLIC_CLAUDE_MODEL`: model for Freeform research. Defaults to `claude-sonnet-4-6`.
-- `NEXT_PUBLIC_CLAUDE_DEEP_MODEL`: model for Deepsynth and Deepsearch. Defaults to `claude-opus-4-7`.
-- `NEXT_PUBLIC_CLAUDE_CHAT_MODEL`: model for canvas and document chat. Defaults to `claude-sonnet-4-6`.
-- `NEXT_PUBLIC_CLAUDE_OCR_MODEL`: model for reading text from images. Defaults to `claude-sonnet-4-6`.
-
-## Deploy
-
-Freemind runs on [Railway](https://railway.com) as one public link. Point a new Railway project at this repo: it autodetects Next.js, builds with `pnpm build`, and serves with `pnpm start` (the included `railway.json` and `.nvmrc` pin this and Node 22). Add a public domain in the service settings and you have a link anyone can open.
-
-Read this before you deploy publicly:
-
-- **Do not set `NEXT_PUBLIC_ANTHROPIC_API_KEY` (or any Anthropic key) in Railway.** The `NEXT_PUBLIC_` prefix bakes the value into the browser bundle, so it would ship your personal key to every visitor. Leave it unset. There is no server code path that reads a key, so there is nothing to configure: each visitor pastes their own.
-- **The app holds no secrets.** Every Anthropic call goes straight from the visitor's browser to Anthropic with the visitor's own key. Nothing touches your server, so there are no secret environment variables in the Railway project.
-- **The two proxy routes are hardened.** `app/api/fetch-url` and `app/api/transcript` are the only server-side surface. They reject cross-origin callers and block requests to private or internal addresses. If you share the link widely, add per-IP rate limiting and a Railway usage alert first, since both routes run on your container.
-- **Set a tldraw license key.** tldraw runs free on localhost, but a production domain needs a license or the editor stops rendering after a few seconds. Get a free hobby license (non-commercial, keeps the watermark) at [tldraw.dev/get-a-license/hobby](https://tldraw.dev/get-a-license/hobby), then set `NEXT_PUBLIC_TLDRAW_LICENSE_KEY` in Railway. The key is domain-locked and ships in the client, so a `NEXT_PUBLIC_` var is correct here (unlike the Anthropic key, which must never be set).
-- **Data is per-address.** Boards, chats, and the key live in the browser, scoped to the exact address (see "Pick one address and stick with it"). Moving to a new link, or from the Railway subdomain to a custom domain, starts fresh. Use Export and Import in Settings to carry data across.
-
-## Things worth knowing
-
-- It's almost all client-side. The only server code is two small Next.js routes: `app/api/transcript` (YouTube transcripts) and `app/api/fetch-url` (link previews), since the browser can't fetch those itself (CORS).
-- Only one research run happens at a time. The Run button is disabled while one is streaming.
-- No accounts, no sharing, no sync. Each board is a local document in one browser, scoped to the address (and port) you open. Keep using the same address so your boards stay visible (see "Pick one address and stick with it" above), and Export from Settings if you want a backup.
-- Freemind uses tldraw on its free tier, so there's a small "made with tldraw" watermark in the corner. It has to stay unless you buy a tldraw license. See [tldraw.dev](https://tldraw.dev/#pricing).
-- A lot of large files can fill the browser's storage quota. You'll get a toast when that happens; clear a board or delete sources you don't need.
-- Images are stored inline (base64) inside the document, so a document with images gets large, and that size counts against your tokens if you later feed that document back in as a source.
 
 ## Working on it
 

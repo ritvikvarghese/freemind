@@ -7,8 +7,9 @@ export type ProvEdge = { from: TLShapeId; to: TLShapeId };
 
 /**
  * Every provenance edge on the current page. The relationship is stored on the
- * downstream node (a document knows its `sourceIds`; a notes node knows its
- * `sourceId`), so `from` is always the doc/notes node and `to` the source.
+ * downstream node (a document knows its `sourceIds` and, for a notes doc, its
+ * `notesOf`; a legacy notes node knows its `sourceId`), so `from` is always
+ * the doc/notes node and `to` the source.
  * Only edges whose BOTH endpoints still exist are returned — a deleted source
  * leaves no dangling edge. Callers that want "everything connected to X" should
  * treat edges as UNDIRECTED (match either endpoint), so selecting a source
@@ -22,6 +23,8 @@ export function getProvenanceEdges(editor: Editor): ProvEdge[] {
       for (const src of (s as DocumentNodeShape).props.sourceIds) {
         if (present.has(src as TLShapeId)) out.push({ from: s.id, to: src as TLShapeId });
       }
+      const notesOf = (s as DocumentNodeShape).props.notesOf as TLShapeId;
+      if (notesOf && present.has(notesOf)) out.push({ from: s.id, to: notesOf });
     } else if (s.type === "canvas-ai-notes") {
       const sid = (s as NotesNodeShape).props.sourceId as TLShapeId;
       if (sid && present.has(sid)) out.push({ from: s.id, to: sid });

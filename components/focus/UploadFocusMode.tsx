@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { MarkdownView } from "@/components/MarkdownView";
 import type { UploadNodeShape } from "@/components/canvas/shapes/UploadNode";
-import { syncNotesNode } from "@/components/canvas/shapes/NotesNode";
+import { appendToNotesDoc } from "@/components/canvas/shapes/NotesNode";
 import { copyTextToCanvas } from "@/components/canvas/copyToCanvas";
 import type { Note } from "@/lib/notes/types";
 import { newNoteId } from "@/lib/notes/types";
@@ -192,23 +192,20 @@ export function UploadFocusMode({ shapeId, onClose }: Props) {
 
   const writeNotes = useCallback(
     (next: Note[]) => {
-      // Source upload owns the notes; mirror them onto the linked notes node
-      // (created on first note). One run() so add/edit/delete is a single undo.
-      editor.run(() => {
-        editor.updateShape<UploadNodeShape>({
-          id: shapeId,
-          type: "canvas-ai-upload",
-          props: { notes: next },
-        });
-        syncNotesNode(editor, shapeId, next);
+      editor.updateShape<UploadNodeShape>({
+        id: shapeId,
+        type: "canvas-ai-upload",
+        props: { notes: next },
       });
     },
     [editor, shapeId],
   );
 
-  // The selection-anchored "Underline" pill: captured at mouseup, rendered at
-  // the selection's screen rect. We stash the offsets so the action survives
-  // the selection being cleared by the click.
+  // The selection action pill: captured at mouseup, anchored to the END of the
+  // selection (where the mouse was released; the top of a long selection is
+  // usually scrolled out of view) and re-placed as the text pane scrolls. We
+  // stash the offsets + range so the action survives the selection being
+  // cleared by the click.
   const [pending, setPending] = useState<{
     start: number;
     end: number;
@@ -216,27 +213,41 @@ export function UploadFocusMode({ shapeId, onClose }: Props) {
     top: number;
     left: number;
   } | null>(null);
+  const pendingRange = useRef<{ range: Range; backward: boolean } | null>(
+    null,
+  );
+  const textPaneRef = useRef<HTMLDivElement>(null);
+
+  const placePill = useCallback(() => {
+    const anchor = pendingRange.current;
+    const pane = textPaneRef.current;
+    if (!anchor || !pane) return;
+    const pos = pillPosition(
+      anchor.range,
+      anchor.backward,
+      pane.getBoundingClientRect(),
+    );
+    if (pos) setPending((p) => (p ? { ...p, ...pos } : p));
+  }, []);
 
   const handleProseMouseUp = useCallback(() => {
     const el = proseRef.current;
-    if (!el) return;
+    const pane = textPaneRef.current;
+    if (!el || !pane) return;
     const info = getSelectionInfo(el);
     const sel = window.getSelection();
-    const rect =
-      info && sel && sel.rangeCount > 0
-        ? sel.getRangeAt(0).getBoundingClientRect()
-        : null;
-    if (!info || !rect) {
+    const range = info && sel ? sel.getRangeAt(0).cloneRange() : null;
+    const backward = sel ? isBackward(sel) : false;
+    const pos = range
+      ? pillPosition(range, backward, pane.getBoundingClientRect())
+      : null;
+    if (!info || !range || !pos) {
+      pendingRange.current = null;
       setPending(null);
       return;
     }
-    setPending({
-      start: info.start,
-      end: info.end,
-      quote: info.quote,
-      top: rect.top - 8,
-      left: rect.left + rect.width / 2,
-    });
+    pendingRange.current = { range, backward };
+    setPending({ start: info.start, end: info.end, quote: info.quote, ...pos });
   }, []);
 
   const addPendingNote = useCallback(() => {
@@ -249,10 +260,16 @@ export function UploadFocusMode({ shapeId, onClose }: Props) {
       end: pending.end,
       createdAt: Date.now(),
     };
-    writeNotes([...readNotes(), note]);
+    // The highlight also lands at the end of the upload's notes doc (created
+    // on the first one). One run() so it's a single undo.
+    const next = [...readNotes(), note];
+    editor.run(() => {
+      writeNotes(next);
+      appendToNotesDoc(editor, shapeId, note.quote, next);
+    });
     window.getSelection()?.removeAllRanges();
     setPending(null);
-  }, [pending, writeNotes, readNotes]);
+  }, [pending, writeNotes, readNotes, editor, shapeId]);
 
   // Copy arbitrary text to the clipboard (best-effort; silent if blocked).
   const copyText = useCallback(async (text: string) => {
@@ -385,7 +402,11 @@ export function UploadFocusMode({ shapeId, onClose }: Props) {
         }`}
       >
         <div className="flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-auto rounded-node border border-hairline bg-elevated px-6 py-5">
+          <div
+            ref={textPaneRef}
+            onScroll={pending ? placePill : undefined}
+            className="flex-1 overflow-auto rounded-node border border-hairline bg-elevated px-6 py-5"
+          >
             <div
               ref={proseRef}
               className={proseClassName}
@@ -589,12 +610,12 @@ export function UploadFocusMode({ shapeId, onClose }: Props) {
           }}
           className="z-[60] flex items-center gap-0.5 rounded-button bg-text-primary p-1 text-app shadow-[var(--shadow-floating)]"
         >
-          <SelectionAction icon={Plus} label="Add to notes" onClick={addPendingNote} />
+          <SelectionAction icon={Plus} label="Add note" onClick={addPendingNote} />
           <span className="mx-0.5 h-4 w-px bg-app/20" aria-hidden />
           <SelectionAction icon={Copy} label="Copy" onClick={copyPending} />
           <SelectionAction
             icon={SquarePlus}
-            label="Copy to canvas"
+            label="Canvas copy"
             onClick={copyPendingToCanvas}
           />
         </div>
@@ -614,6 +635,48 @@ function noteText(note: Note): string {
     .map((s) => s.trim())
     .filter(Boolean)
     .join("\n\n");
+}
+
+/** True when the selection was dragged upward (focus before anchor), so the
+ *  release point is the range's start. */
+function isBackward(sel: Selection): boolean {
+  const { anchorNode, focusNode } = sel;
+  if (!anchorNode || !focusNode) return false;
+  if (anchorNode === focusNode) return sel.focusOffset < sel.anchorOffset;
+  return !!(
+    anchorNode.compareDocumentPosition(focusNode) &
+    Node.DOCUMENT_POSITION_PRECEDING
+  );
+}
+
+/**
+ * Where the selection pill sits: centered above the line the selection ends on
+ * (its first line when dragged upward), clamped inside the text pane so it
+ * stays reachable even when that line is scrolled out of view. The pill is
+ * translated -100% vertically, so `top` is its bottom edge.
+ */
+function pillPosition(
+  range: Range,
+  backward: boolean,
+  pane: DOMRect,
+): { top: number; left: number } | null {
+  const rects = Array.from(range.getClientRects()).filter(
+    (r) => r.width > 0 && r.height > 0,
+  );
+  const line = backward ? rects[0] : rects[rects.length - 1];
+  if (!line) return null;
+  const PILL_H = 40;
+  const PILL_HALF_W = 150;
+  const top = Math.min(
+    Math.max(line.top - 8, pane.top + PILL_H),
+    pane.bottom - 8,
+  );
+  const x = backward ? line.left : line.right;
+  const left = Math.min(
+    Math.max(x, pane.left + PILL_HALF_W),
+    Math.max(pane.left + PILL_HALF_W, pane.right - PILL_HALF_W),
+  );
+  return { top, left };
 }
 
 /** One labeled button in the floating text-selection action box. */

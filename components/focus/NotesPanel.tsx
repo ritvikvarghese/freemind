@@ -70,7 +70,7 @@ export function NotesPanel({
         {ordered.length === 0 ? (
           <div className="px-1 py-2 text-[12px] leading-relaxed text-text-tertiary">
             Select text in the document and choose{" "}
-            <span className="text-text-secondary">Add to notes</span> to clip it
+            <span className="text-text-secondary">Add note</span> to clip it
             here, or use{" "}
             <span className="text-text-secondary">new note</span> to write your
             own. A comment is optional.

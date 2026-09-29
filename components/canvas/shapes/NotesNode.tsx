@@ -15,16 +15,20 @@ import { StickyNote } from "lucide-react";
 import { openFocus } from "@/lib/focus/openFocus";
 import type { Note } from "@/lib/notes/types";
 import type { UploadNodeShape } from "./UploadNode";
+import {
+  DOCUMENT_NODE_DEFAULT_H,
+  DOCUMENT_NODE_DEFAULT_W,
+  type DocumentNodeShape,
+} from "./DocumentNode";
 import { ConnectHandle } from "./ConnectHandle";
 import { findSlotAroundSource } from "../copyToCanvas";
 
 /**
- * A canvas node that mirrors the reader notes of one source document. It is a
- * VIEW: the source upload shape owns the notes (single source of truth); this
- * node carries a denormalized copy so it renders, snapshots, and feeds the AI
- * without reaching back to the source (and so it survives the source being
- * deleted). The copy is kept in sync from the one write path in focus mode via
- * `syncNotesNode`. Double-clicking opens the source's focus view to edit.
+ * LEGACY. Reader highlights used to be mirrored onto this read-only card; they
+ * now collect in an editable notes doc (a `canvas-ai-document` with `notesOf`,
+ * see `appendToNotesDoc`). Existing cards still render, and are converted in
+ * place into a notes doc when double-clicked or when their source gets a new
+ * highlight. Nothing creates new ones.
  */
 export type NotesNodeShape = TLBaseShape<
   "canvas-ai-notes",
@@ -90,7 +94,7 @@ export class NotesNodeUtil extends BaseBoxShapeUtil<NotesNodeShape> {
   }
 
   override onDoubleClick(shape: NotesNodeShape) {
-    if (shape.props.sourceId) openFocus(shape.props.sourceId as TLShapeId);
+    openFocus(convertNotesNode(this.editor, shape));
   }
 
   override component(shape: NotesNodeShape) {
@@ -157,50 +161,150 @@ function NotesNodeBody({ shape }: { shape: NotesNodeShape }) {
   );
 }
 
-/**
- * Mirror `notes` onto the notes node for `sourceId`, creating it on first note
- * just to the right of the source. Called from the single note-write path in
- * focus mode (wrap with the source update in one `editor.run` for clean undo).
- */
-export function syncNotesNode(
+/** The notes doc collecting `uploadId`'s highlights, if one exists. */
+function findNotesDoc(
   editor: Editor,
-  sourceId: TLShapeId,
-  notes: Note[],
-): void {
-  const existing = editor
+  uploadId: TLShapeId,
+): DocumentNodeShape | undefined {
+  return editor
     .getCurrentPageShapes()
     .find(
       (s) =>
-        s.type === "canvas-ai-notes" &&
-        (s as NotesNodeShape).props.sourceId === sourceId,
-    ) as NotesNodeShape | undefined;
+        s.type === "canvas-ai-document" &&
+        (s as DocumentNodeShape).props.notesOf === uploadId,
+    ) as DocumentNodeShape | undefined;
+}
 
-  const source = editor.getShape(sourceId);
+function notesDocTitle(editor: Editor, uploadId: TLShapeId): string {
+  const source = editor.getShape(uploadId);
   const filename =
     source && source.type === "canvas-ai-upload"
       ? (source as UploadNodeShape).props.filename
       : "";
-  const title = filename ? `Notes from ${filename}` : "Notes";
+  return filename ? `Notes from ${filename}` : "Notes";
+}
 
-  if (existing) {
-    editor.updateShape<NotesNodeShape>({
-      id: existing.id,
-      type: "canvas-ai-notes",
-      props: { notes, title },
+/** A highlighted passage as markdown paragraph(s), with markdown syntax
+ *  escaped so the quote reads back verbatim in the document. */
+function quoteToMarkdown(quote: string): string {
+  return quote
+    .trim()
+    .split(/\n\s*\n/)
+    .map((para) =>
+      para
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/([\\`*_[\]#<>|$~])/g, "\\$1"),
+    )
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** Highlights only (comments and manual notes stay on the source), in
+ *  document order, as the body of a notes doc. */
+function highlightsToMarkdown(notes: Note[]): string {
+  return [...notes]
+    .filter((n) => n.start >= 0 && n.quote.trim())
+    .sort((a, b) => a.start - b.start)
+    .map((n) => quoteToMarkdown(n.quote))
+    .join("\n\n");
+}
+
+function createNotesDoc(
+  editor: Editor,
+  uploadId: TLShapeId,
+  markdown: string,
+  box: { x: number; y: number; w: number; h: number },
+): TLShapeId {
+  const id = createShapeId();
+  editor.createShape<DocumentNodeShape>({
+    id,
+    type: "canvas-ai-document",
+    x: box.x,
+    y: box.y,
+    props: {
+      w: box.w,
+      h: box.h,
+      title: notesDocTitle(editor, uploadId),
+      markdown,
+      status: "done",
+      notesOf: uploadId,
+    },
+  });
+  return id;
+}
+
+/**
+ * Replace a legacy notes node with an editable notes doc in the same spot,
+ * seeded with the highlights in `notes` (the node's own copy by default). If
+ * the upload already has a notes doc, the node is just removed and that doc's
+ * id returned.
+ */
+export function convertNotesNode(
+  editor: Editor,
+  node: NotesNodeShape,
+  notes: Note[] = node.props.notes,
+): TLShapeId {
+  const uploadId = node.props.sourceId as TLShapeId;
+  let docId = uploadId ? findNotesDoc(editor, uploadId)?.id : undefined;
+  editor.run(() => {
+    docId ??= createNotesDoc(editor, uploadId, highlightsToMarkdown(notes), {
+      x: node.x,
+      y: node.y,
+      w: Math.max(node.props.w, DOCUMENT_NODE_DEFAULT_W),
+      h: Math.max(node.props.h, DOCUMENT_NODE_DEFAULT_H),
+    });
+    editor.deleteShape(node.id);
+  });
+  return docId!;
+}
+
+/**
+ * Append a new highlight to `uploadId`'s notes doc, creating the doc beside
+ * the upload on the first highlight. Text already in the doc is never touched,
+ * so the user's own edits survive. A legacy notes node for the upload is
+ * converted instead, seeded from `notes` (the upload's notes, this one
+ * included). Call inside the same `editor.run` as the upload write for one
+ * undo step.
+ */
+export function appendToNotesDoc(
+  editor: Editor,
+  uploadId: TLShapeId,
+  quote: string,
+  notes: Note[],
+): void {
+  const doc = findNotesDoc(editor, uploadId);
+  if (doc) {
+    const body = doc.props.markdown.trimEnd();
+    const add = quoteToMarkdown(quote);
+    editor.updateShape<DocumentNodeShape>({
+      id: doc.id,
+      type: "canvas-ai-document",
+      props: { markdown: body ? `${body}\n\n${add}` : add },
     });
     return;
   }
-  if (notes.length === 0) return;
-
-  // Place it just right of the source when that space is free, otherwise the
-  // first clear slot around the source (so it never overlaps a copy-to-canvas
-  // clip that already took the right side).
-  const at = findSlotAroundSource(editor, sourceId, DEFAULT_W, DEFAULT_H);
-  editor.createShape<NotesNodeShape>({
-    id: createShapeId(),
-    type: "canvas-ai-notes",
-    x: at.x,
-    y: at.y,
-    props: { w: DEFAULT_W, h: DEFAULT_H, sourceId, title, notes },
+  const legacy = editor
+    .getCurrentPageShapes()
+    .find(
+      (s) =>
+        s.type === "canvas-ai-notes" &&
+        (s as NotesNodeShape).props.sourceId === uploadId,
+    ) as NotesNodeShape | undefined;
+  if (legacy) {
+    convertNotesNode(editor, legacy, notes);
+    return;
+  }
+  // Right of the upload when free, otherwise the first clear slot around it.
+  const at = findSlotAroundSource(
+    editor,
+    uploadId,
+    DOCUMENT_NODE_DEFAULT_W,
+    DOCUMENT_NODE_DEFAULT_H,
+  );
+  createNotesDoc(editor, uploadId, quoteToMarkdown(quote), {
+    ...at,
+    w: DOCUMENT_NODE_DEFAULT_W,
+    h: DOCUMENT_NODE_DEFAULT_H,
   });
 }

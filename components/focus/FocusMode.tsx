@@ -10,6 +10,7 @@ import {
 import { createPortal } from "react-dom";
 import { useEditor, useValue, type TLShapeId } from "tldraw";
 import { useFocusTransition } from "./useFocusTransition";
+import { openFocus } from "@/lib/focus/openFocus";
 import {
   X,
   ChevronDown,
@@ -207,6 +208,23 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
     requestClose();
   }, [flush, requestClose]);
 
+  // A notes doc links back to the upload it collects highlights from, while
+  // that upload still exists. Save first: switching focus unmounts the editor.
+  const notesOf = useValue(
+    `focus-notes-of-${shapeId}`,
+    () => {
+      const id = (editor.getShape(shapeId) as DocumentNodeShape | undefined)
+        ?.props.notesOf as TLShapeId | undefined;
+      return id && editor.getShape(id)?.type === "canvas-ai-upload" ? id : null;
+    },
+    [editor, shapeId],
+  );
+  const handleOpenOriginal = useCallback(() => {
+    if (!notesOf) return;
+    flush();
+    openFocus(notesOf);
+  }, [flush, notesOf]);
+
   // If the shape disappeared (e.g. deleted from another surface), exit cleanly.
   useEffect(() => {
     if (!shape) onClose();
@@ -364,6 +382,7 @@ function DocumentFocusMode({ shapeId, onClose }: Props) {
         onTitleChange={handleTitleChange}
         markdown={markdown}
         sourceUrl={shape?.props.sourceUrl ?? ""}
+        onOpenOriginal={notesOf ? handleOpenOriginal : undefined}
         onClose={handleClose}
         chatsListOpen={chatsListOpen}
         onToggleChatsList={() => setChatsListOpen((v) => !v)}
@@ -518,6 +537,7 @@ function Header({
   onTitleChange,
   markdown,
   sourceUrl,
+  onOpenOriginal,
   onClose,
   chatsListOpen,
   onToggleChatsList,
@@ -529,6 +549,9 @@ function Header({
   onTitleChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   markdown: string;
   sourceUrl: string;
+  /** Set for a notes doc whose source upload still exists: shows the
+   *  "Original document" link. */
+  onOpenOriginal?: () => void;
   onClose: () => void;
   chatsListOpen: boolean;
   onToggleChatsList: () => void;
@@ -598,6 +621,17 @@ function Header({
           </button>
           {chatsMenuSlot}
         </div>
+        {onOpenOriginal ? (
+          <button
+            type="button"
+            onClick={onOpenOriginal}
+            title="Open the document these notes came from"
+            className="flex h-7 items-center gap-1.5 rounded-button px-2 text-[12px] text-text-secondary transition-colors duration-100 hover:bg-surface-hover hover:text-text-primary"
+          >
+            <FileText className="h-3.5 w-3.5" aria-hidden />
+            Original document
+          </button>
+        ) : null}
         <button
           type="button"
           title="Close (Esc)"

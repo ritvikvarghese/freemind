@@ -79,6 +79,10 @@ export type DocumentNodeShape = TLBaseShape<
      * `--doc-font` CSS variable on the editor; defaults to "sans". Stored on the
      * shape (not in the markdown) so it survives the markdown round-trip. */
     font: "sans" | "serif" | "mono";
+    /** TLShapeId of the upload whose highlights this document collects (its
+     * "notes doc"). New highlights in that upload append here; empty for every
+     * other document. May dangle if the upload is deleted. */
+    notesOf: string;
   }
 >;
 
@@ -160,6 +164,7 @@ export class DocumentNodeUtil extends BaseBoxShapeUtil<DocumentNodeShape> {
     errorMessage: T.string,
     sourceUrl: T.string,
     font: T.literalEnum("sans", "serif", "mono"),
+    notesOf: T.string,
   };
 
   static override migrations = createShapePropsMigrationSequence({
@@ -204,6 +209,14 @@ export class DocumentNodeUtil extends BaseBoxShapeUtil<DocumentNodeShape> {
         },
         down: "retired",
       },
+      {
+        id: "com.tldraw.shape.canvas-ai-document/6",
+        up: (props) => {
+          const p = props as { notesOf?: string };
+          if (typeof p.notesOf !== "string") p.notesOf = "";
+        },
+        down: "retired",
+      },
     ],
   });
 
@@ -236,6 +249,7 @@ export class DocumentNodeUtil extends BaseBoxShapeUtil<DocumentNodeShape> {
       errorMessage: "",
       sourceUrl: "",
       font: "sans",
+      notesOf: "",
     };
   }
 
